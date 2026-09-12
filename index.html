@@ -30,50 +30,129 @@
     <p id="login-error" class="error" hidden></p>
   </form>
 
-  <section id="readings" class="readings" hidden>
-    <div class="row soil" id="row-soil">
-      <span class="fill" id="soil-fill" aria-hidden="true"></span>
-      <span class="label">Soil moisture</span>
-      <span class="value"><b id="soil">–</b><small>% of saturation</small></span>
-    </div>
-    <div class="row">
-      <span class="label">Soil temperature</span>
-      <span class="value"><b id="soil-temp">–</b><small>°C</small></span>
-    </div>
-    <div class="row">
-      <span class="label">Air temperature</span>
-      <span class="value"><b id="air-temp">–</b><small>°C</small></span>
-    </div>
-    <div class="row">
-      <span class="label">Humidity</span>
-      <span class="value"><b id="humidity">–</b><small>%</small></span>
-    </div>
-    <div class="row">
-      <span class="label">Rain plate</span>
-      <span class="value"><b id="rain">–</b></span>
-    </div>
-    <div class="row">
-      <span class="label">Light</span>
-      <span class="value"><b id="light">–</b><small>of 4095</small></span>
-    </div>
-    <div class="row valve">
-      <span class="label">Valve</span>
-      <label class="switch">
-        <input id="relay" type="checkbox" disabled>
-        <span class="track" aria-hidden="true"></span>
-        <span id="relay-text">Closed</span>
-      </label>
-    </div>
-  </section>
+  <div id="app" hidden>
 
-  <footer id="foot" hidden>
-    <span id="signal"></span>
-    <span id="uptime"></span>
-    <button id="forget" type="button" class="link">Forget password</button>
-  </footer>
+    <section class="hero">
+      <p id="countdown" class="lede">Waiting for the node.</p>
+      <p id="provisional" class="note" hidden></p>
+      <figure class="chart" id="soil-chart" aria-label="Soil moisture over the last twelve hours and the model's trajectory for the next twenty four"></figure>
+      <p class="legend">
+        <span><i class="swatch observed"></i>Measured</span>
+        <span><i class="swatch predicted"></i>Predicted by the model on the node</span>
+        <span><i class="swatch threshold"></i>Watering threshold</span>
+      </p>
+    </section>
+
+    <section class="readings">
+      <div class="row soil">
+        <span class="fill" id="soil-fill" aria-hidden="true"></span>
+        <span class="label">Soil moisture</span>
+        <span class="value"><b id="soil">–</b><small>% of saturation</small></span>
+      </div>
+      <div class="row">
+        <span class="label">Soil temperature</span>
+        <span class="value"><b id="soil-temp">–</b><small>°C</small></span>
+      </div>
+      <div class="row">
+        <span class="label">Air temperature</span>
+        <span class="value"><b id="air-temp">–</b><small>°C</small></span>
+      </div>
+      <div class="row">
+        <span class="label">Humidity</span>
+        <span class="value"><b id="humidity">–</b><small>%</small></span>
+      </div>
+      <div class="row">
+        <span class="label">Rain plate</span>
+        <span class="value"><b id="rain">–</b></span>
+      </div>
+      <div class="row">
+        <span class="label">Light</span>
+        <span class="value"><b id="light">–</b><small>of 4095</small></span>
+      </div>
+      <div class="row valve">
+        <span class="label">Valve</span>
+        <label class="switch">
+          <input id="relay" type="checkbox" disabled>
+          <span class="track" aria-hidden="true"></span>
+          <span id="relay-text">Closed</span>
+        </label>
+      </div>
+    </section>
+
+    <section class="check">
+      <h2>Is the model right?</h2>
+      <p id="skill-text" class="note">Every hour the node records what it expects the soil to do. Once that hour has passed, the forecast is compared with what the probe measured, and with the simplest alternative of assuming nothing changes.</p>
+      <figure class="chart" id="check-chart" aria-label="Hourly soil moisture measured against what the model predicted two hours earlier"></figure>
+      <p class="legend">
+        <span><i class="swatch observed"></i>Measured, hourly</span>
+        <span><i class="swatch predicted"></i>Predicted two hours earlier</span>
+      </p>
+      <div class="table-wrap">
+        <table id="skill-table">
+          <thead>
+            <tr><th>Horizon</th><th>Forecasts checked</th><th>Model error</th><th>No-change error</th><th>Skill</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="traces">
+      <h2>Last twelve hours</h2>
+      <div class="grid">
+        <figure class="chart small" id="trace-soil-temp" data-title="Soil temperature, °C"></figure>
+        <figure class="chart small" id="trace-air-temp" data-title="Air temperature, °C"></figure>
+        <figure class="chart small" id="trace-humidity" data-title="Humidity, %"></figure>
+        <figure class="chart small" id="trace-light" data-title="Light"></figure>
+        <figure class="chart small" id="trace-rain" data-title="Rain plate"></figure>
+      </div>
+    </section>
+
+    <section class="settings">
+      <h2>Settings</h2>
+      <div class="row valve">
+        <span class="label">Water automatically when the countdown is inside the lead time</span>
+        <label class="switch">
+          <input id="auto" type="checkbox">
+          <span class="track" aria-hidden="true"></span>
+          <span id="auto-text">Off</span>
+        </label>
+      </div>
+      <div class="row">
+        <span class="label">Watering threshold, % of saturation</span>
+        <input id="threshold" class="number" type="number" min="5" max="95" step="5">
+      </div>
+      <div class="row">
+        <span class="label">Lead time, hours</span>
+        <input id="lead" class="number" type="number" min="1" max="24" step="1">
+      </div>
+      <div class="row">
+        <span class="label">Watering pulse, seconds</span>
+        <input id="pulse" class="number" type="number" min="1" max="120" step="1">
+      </div>
+      <div class="row">
+        <span class="label">Probe reading when dry</span>
+        <input id="dry" class="number" type="number" min="0" max="4095" step="1">
+      </div>
+      <div class="row">
+        <span class="label">Probe reading when wet</span>
+        <input id="wet" class="number" type="number" min="0" max="4095" step="1">
+      </div>
+      <p class="note">The percentage is measured between the dry and wet readings. The current pair came from the fork in air and in a glass of water. For a pot, take the wet reading once it has stopped draining and the dry one when the reading stops falling.</p>
+    </section>
+
+    <footer id="foot">
+      <span id="signal"></span>
+      <span id="uptime"></span>
+      <button id="forget" type="button" class="link">Forget password</button>
+    </footer>
+  </div>
 </main>
 
+<div id="tooltip" class="tooltip" hidden></div>
+
 <script src="https://cdn.jsdelivr.net/npm/mqtt@5.10.1/dist/mqtt.min.js"></script>
+<script src="charts.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
