@@ -9,6 +9,8 @@
 
 * { box-sizing: border-box; }
 
+[hidden] { display: none !important; }
+
 html { background: #fff; }
 
 body {
@@ -136,9 +138,9 @@ button.link {
   border-bottom: 1px solid var(--rule);
 }
 
-.row.soil { padding-left: 12px; padding-right: 12px; margin: 0 -12px; }
+.row > * { position: relative; z-index: 1; }
 
-.fill {
+.row > .fill {
   position: absolute;
   inset: 0 auto 0 0;
   width: 0;
@@ -146,8 +148,6 @@ button.link {
   transition: width 0.8s ease;
   z-index: 0;
 }
-
-.row > * { position: relative; z-index: 1; }
 
 .label { font-size: 15px; }
 
