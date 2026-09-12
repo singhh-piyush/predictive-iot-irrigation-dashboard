@@ -66,12 +66,16 @@ function now() { return Date.now() / 1000; }
 function renderReadings(s) {
   const sat = pct(s.soil_raw);
   el("soil").textContent = fmt(sat, 0);
-  el("soil-fill").style.width = `${Math.max(0, Math.min(100, sat))}%`;
   el("soil-temp").textContent = fmt(s.soil_temp, 1);
   el("air-temp").textContent = fmt(s.air_temp, 1);
   el("humidity").textContent = fmt(s.humidity, 0);
   el("rain").textContent = s.rain_raw > RAIN_WET_ABOVE ? "Wet" : "Dry";
   el("light").textContent = s.light_raw;
+  el("now-soil-temp").textContent = s.soil_temp === undefined ? "" : `${fmt(s.soil_temp, 1)} °C`;
+  el("now-air-temp").textContent = s.air_temp === undefined ? "" : `${fmt(s.air_temp, 1)} °C`;
+  el("now-humidity").textContent = s.humidity === undefined ? "" : `${fmt(s.humidity, 0)} %`;
+  el("now-light").textContent = `${s.light_raw}`;
+  el("now-rain").textContent = s.rain_raw > RAIN_WET_ABOVE ? "Wet" : "Dry";
   relay.checked = !!s.relay;
   relay.disabled = false;
   el("relay-text").textContent = s.relay ? "Open" : "Closed";
@@ -101,11 +105,11 @@ function renderHero() {
 
   Charts.draw(el("soil-chart"), {
     x: [t - LOOKBACK_S, t + AHEAD_S], y: [Math.floor(lo / 10) * 10, Math.ceil(hi / 10) * 10],
-    step: 6, now: t, unit: " %", gap: 900, snap: 3600,
-    threshold: data.config.threshold * 100,
+    step: 6, now: t, shadeFrom: t, unit: " %", gap: 900, snap: 3600,
+    threshold: data.config.threshold * 100, band: data.config.threshold * 100,
     format: (v) => `${Math.round(v)}`,
     series: [
-      { name: "Measured", cls: "observed", points: measured },
+      { name: "Measured", cls: "soil", points: measured, area: true },
       { name: "Predicted", cls: "predicted", points: predicted, dots: true },
     ],
     empty: "Waiting for the node's first readings",
@@ -113,11 +117,22 @@ function renderHero() {
 
   const line = el("countdown");
   const prov = el("provisional");
+  const kpi = el("kpi-hours");
+  const pill = el("decision");
   if (!f || !f.ready) {
     line.textContent = "Waiting for the first hour of readings before the model can run.";
+    kpi.textContent = "–";
+    pill.textContent = "Waiting";
+    pill.dataset.state = "waiting";
     show(prov, false);
     return;
   }
+  el("inference").textContent = f.inference_ms === undefined ? "On device" : `On device, ${f.inference_ms} ms`;
+  if (f.crossing === 0) kpi.innerHTML = "Now";
+  else if (f.crossing === null) kpi.innerHTML = `24<small>h +</small>`;
+  else kpi.innerHTML = `${f.crossing.toFixed(1)}<small>h</small>`;
+  pill.textContent = f.decision === "irrigate" ? "Water now" : "Hold";
+  pill.dataset.state = f.decision === "irrigate" ? "irrigate" : "hold";
   const thr = Math.round(f.threshold * 100);
   const nowPct = Math.round(f.levels[0] * 100);
   const endPct = Math.round(f.levels[f.levels.length - 1] * 100);
@@ -129,12 +144,9 @@ function renderHero() {
     const due = f.decision === "irrigate" ? " That is inside the lead time, so watering is due." : "";
     line.innerHTML = `Reaches the watering threshold in about <b>${f.crossing.toFixed(1)} h</b>.${due}`;
   }
-  let note = "";
-  if (f.inference_ms !== undefined) {
-    note = `Computed on the ESP32 at ${new Date(f.at * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}, five models in ${f.inference_ms} ms.`;
-  }
+  let note = `Computed on the node at ${new Date(f.at * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.`;
   if (!f.full) {
-    note += `${note ? " " : ""}Built on ${f.history_hours} of the 24 hours of history the model was trained with, so the trajectory is provisional until tomorrow.`;
+    note += ` Built on ${f.history_hours} of the 24 hours of history the model was trained with, so provisional until tomorrow.`;
   }
   if (f.last_watering) {
     note += `${note ? " " : ""}Last watered ${ago((t - f.last_watering) * 1000)}.`;
@@ -177,7 +189,7 @@ function renderCheck() {
     step: 12, now: t, unit: " %", gap: 5400, snap: 1800,
     format: (v) => `${Math.round(v)}`,
     series: [
-      { name: "Measured", cls: "observed", points: measured, dots: true },
+      { name: "Measured", cls: "soil", points: measured, dots: true },
       { name: "Predicted 2 h earlier", cls: "predicted", points: predicted, dots: true },
     ],
     empty: "The first comparison appears two hours after the node's first full hour",
@@ -215,7 +227,24 @@ function renderCheck() {
   text.textContent = `Over ${headline.n} checked two hour forecasts the model was off by ${headline.m.toFixed(1)} points of saturation on average, against ${headline.p.toFixed(1)} for assuming nothing changes. ${verdict}${prov}`;
 }
 
+function renderSparks() {
+  const specs = [
+    ["spark-soil", "soil", 1, true],
+    ["spark-soil-temp", "soil_temp_x100", 100],
+    ["spark-air-temp", "air_temp_x10", 10],
+    ["spark-humidity", "humidity_x10", 10],
+    ["spark-rain", "rain", 1],
+    ["spark-light", "light", 1],
+  ];
+  for (const [id, field, scaleBy, asPct] of specs) {
+    let points = historyPoints(field, scaleBy);
+    if (asPct) points = points.map(([ts, v]) => [ts, v === null ? null : pct(v)]);
+    Charts.spark(el(id), points);
+  }
+}
+
 function renderTraces() {
+  renderSparks();
   const t = now();
   const specs = [
     ["trace-soil-temp", "soil_temp_x100", 100, 1],
@@ -231,11 +260,13 @@ function renderTraces() {
     let hi = values.length ? Math.max(...values) : 1;
     const padding = Math.max((hi - lo) * 0.2, digits ? 0.5 : 5);
     lo -= padding; hi += padding;
+    // counts and percentages cannot go below zero, so the axis should not either
+    if (!digits) lo = Math.max(0, lo);
     const figure = el(id);
     Charts.draw(figure, {
       x: [t - LOOKBACK_S, t], y: [lo, hi], step: 6, small: true, gap: 900, snap: 600,
-      title: figure.dataset.title, format: (v) => v.toFixed(digits),
-      series: [{ name: figure.dataset.title.split(",")[0], cls: "observed", points }],
+      format: (v) => v.toFixed(digits),
+      series: [{ name: figure.dataset.title.split(",")[0], cls: "accent", points, area: true }],
       empty: "Nothing yet",
     });
   }

@@ -52,6 +52,43 @@ const Charts = (() => {
     return d;
   }
 
+  // Closed shapes under each unbroken run of the line, down to the baseline
+  function areaFor(points, x, y, gap, base) {
+    let d = "";
+    let run = [];
+    const flush = () => {
+      if (run.length < 2) { run = []; return; }
+      d += `M${x(run[0][0]).toFixed(1)},${base.toFixed(1)}`;
+      for (const [t, v] of run) d += `L${x(t).toFixed(1)},${y(v).toFixed(1)}`;
+      d += `L${x(run[run.length - 1][0]).toFixed(1)},${base.toFixed(1)}Z`;
+      run = [];
+    };
+    let prev = null;
+    for (const p of points) {
+      if (p[1] === null || Number.isNaN(p[1])) { flush(); prev = null; continue; }
+      if (prev !== null && p[0] - prev > gap) flush();
+      run.push(p);
+      prev = p[0];
+    }
+    flush();
+    return d;
+  }
+
+  // Tiny line with no axes, for the reading tiles
+  function spark(el, points, gap) {
+    const pts = points.filter((p) => p[1] !== null && !Number.isNaN(p[1]));
+    if (pts.length < 2) { el.innerHTML = ""; return; }
+    const W = 120, H = 30;
+    const t0 = pts[0][0], t1 = pts[pts.length - 1][0];
+    let lo = Math.min(...pts.map((p) => p[1])), hi = Math.max(...pts.map((p) => p[1]));
+    if (hi - lo < 1e-9) { lo -= 1; hi += 1; }
+    const x = scale(t0, t1, 1, W - 1);
+    const y = scale(lo, hi, H - 2, 3);
+    el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">`
+      + `<path class="fill" d="${areaFor(points, x, y, gap || 900, H)}"/>`
+      + `<path class="line" d="${pathFor(points, x, y, gap || 900)}"/></svg>`;
+  }
+
   function nearest(points, t) {
     let best = null;
     for (const p of points) {
@@ -63,9 +100,9 @@ const Charts = (() => {
 
   function draw(el, o) {
     const W = o.small ? NARROW : WIDE;
-    const H = o.small ? 150 : 240;
+    const H = o.small ? 140 : 240;
     const pad = { ...PAD };
-    if (o.small) { pad.left = 36; pad.top = 26; pad.right = 10; }
+    if (o.small) { pad.left = 36; pad.top = 12; pad.right = 10; }
     const x = scale(o.x[0], o.x[1], pad.left, W - pad.right);
     let [y0, y1] = o.y;
     if (y1 - y0 < 1e-9) { y0 -= 1; y1 += 1; }
@@ -75,6 +112,13 @@ const Charts = (() => {
 
     let s = `<svg viewBox="0 0 ${W} ${H}" role="img">`;
     if (o.title) s += `<text class="title" x="${pad.left}" y="12">${o.title}</text>`;
+    if (o.shadeFrom !== undefined) {
+      s += `<rect class="shade" x="${x(o.shadeFrom).toFixed(1)}" y="${pad.top}" width="${(W - pad.right - x(o.shadeFrom)).toFixed(1)}" height="${H - pad.top - pad.bottom}"/>`;
+    }
+    if (o.band !== undefined) {
+      const top = Math.min(Math.max(y(o.band), pad.top), H - pad.bottom);
+      s += `<rect class="band" x="${pad.left}" y="${top.toFixed(1)}" width="${W - pad.left - pad.right}" height="${(H - pad.bottom - top).toFixed(1)}"/>`;
+    }
 
     for (const v of valueTicks(y0, y1)) {
       s += `<line class="grid-line" x1="${pad.left}" x2="${W - pad.right}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}"/>`;
@@ -97,6 +141,10 @@ const Charts = (() => {
       const pts = series.points.filter((p) => p[1] !== null && !Number.isNaN(p[1]));
       if (!pts.length) continue;
       any = true;
+      if (series.area) {
+        const base = y(Math.max(y0, 0));
+        s += `<path class="area ${series.cls}" d="${areaFor(series.points, x, y, gap, base)}"/>`;
+      }
       s += `<path class="series ${series.cls}" d="${pathFor(series.points, x, y, gap)}"/>`;
       if (series.dots) {
         for (const [t, v] of pts) {
@@ -145,5 +193,5 @@ const Charts = (() => {
     });
   }
 
-  return { draw };
+  return { draw, spark };
 })();
