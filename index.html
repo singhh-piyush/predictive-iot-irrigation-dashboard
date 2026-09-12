@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Irrigation node</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<main>
+  <header>
+    <h1>Irrigation node</h1>
+    <p id="status" class="status" data-state="idle">
+      <span class="dot" aria-hidden="true"></span>
+      <span id="status-text">Not connected</span>
+    </p>
+  </header>
+
+  <form id="login" class="login" hidden>
+    <p>Broker password to see the node.</p>
+    <label>
+      <span>Password</span>
+      <input id="password" type="password" autocomplete="current-password" required>
+    </label>
+    <button type="submit">Connect</button>
+    <p id="login-error" class="error" hidden></p>
+  </form>
+
+  <section id="readings" class="readings" hidden>
+    <div class="row soil" id="row-soil">
+      <span class="fill" id="soil-fill" aria-hidden="true"></span>
+      <span class="label">Soil moisture</span>
+      <span class="value"><b id="soil">–</b><small>% of saturation</small></span>
+    </div>
+    <div class="row">
+      <span class="label">Soil temperature</span>
+      <span class="value"><b id="soil-temp">–</b><small>°C</small></span>
+    </div>
+    <div class="row">
+      <span class="label">Air temperature</span>
+      <span class="value"><b id="air-temp">–</b><small>°C</small></span>
+    </div>
+    <div class="row">
+      <span class="label">Humidity</span>
+      <span class="value"><b id="humidity">–</b><small>%</small></span>
+    </div>
+    <div class="row">
+      <span class="label">Rain plate</span>
+      <span class="value"><b id="rain">–</b></span>
+    </div>
+    <div class="row">
+      <span class="label">Light</span>
+      <span class="value"><b id="light">–</b><small>of 4095</small></span>
+    </div>
+    <div class="row valve">
+      <span class="label">Valve</span>
+      <label class="switch">
+        <input id="relay" type="checkbox" disabled>
+        <span class="track" aria-hidden="true"></span>
+        <span id="relay-text">Closed</span>
+      </label>
+    </div>
+  </section>
+
+  <footer id="foot" hidden>
+    <span id="signal"></span>
+    <span id="uptime"></span>
+    <button id="forget" type="button" class="link">Forget password</button>
+  </footer>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/mqtt@5.10.1/dist/mqtt.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
