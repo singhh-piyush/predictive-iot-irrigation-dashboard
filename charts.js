@@ -1,7 +1,7 @@
 // Small SVG line charts drawn by hand. Time on the x axis in unix seconds, values
 // on the y axis. Each chart gets a crosshair and a tooltip on hover.
 const Charts = (() => {
-  const W = 640;
+  const WIDE = 640, NARROW = 320;
   const PAD = { top: 18, right: 14, bottom: 26, left: 42 };
   const tooltip = () => document.getElementById("tooltip");
 
@@ -62,9 +62,10 @@ const Charts = (() => {
   }
 
   function draw(el, o) {
-    const H = o.small ? 132 : 240;
+    const W = o.small ? NARROW : WIDE;
+    const H = o.small ? 150 : 240;
     const pad = { ...PAD };
-    if (o.small) { pad.left = 38; pad.top = 24; }
+    if (o.small) { pad.left = 36; pad.top = 26; pad.right = 10; }
     const x = scale(o.x[0], o.x[1], pad.left, W - pad.right);
     let [y0, y1] = o.y;
     if (y1 - y0 < 1e-9) { y0 -= 1; y1 += 1; }

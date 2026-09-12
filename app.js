@@ -233,7 +233,7 @@ function renderTraces() {
     lo -= padding; hi += padding;
     const figure = el(id);
     Charts.draw(figure, {
-      x: [t - LOOKBACK_S, t], y: [lo, hi], step: 4, small: true, gap: 900, snap: 600,
+      x: [t - LOOKBACK_S, t], y: [lo, hi], step: 6, small: true, gap: 900, snap: 600,
       title: figure.dataset.title, format: (v) => v.toFixed(digits),
       series: [{ name: figure.dataset.title.split(",")[0], cls: "observed", points }],
       empty: "Nothing yet",
