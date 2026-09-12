@@ -7,20 +7,35 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=202609122144">
+<link rel="stylesheet" href="style.css?v=202609122204">
 </head>
-<body>
+<body data-side="open" data-node="idle">
+
+<nav class="side" id="side" aria-label="Pages">
+  <div class="side-top">
+    <p class="brand">Irrigation node</p>
+    <p class="brand-sub">ESP32-S3 in the pot</p>
+  </div>
+  <ul class="pages">
+    <li><a href="#dashboard" data-page="dashboard">Dashboard</a></li>
+    <li><a href="#model" data-page="model">Model</a></li>
+    <li><a href="#settings" data-page="settings">Settings</a></li>
+  </ul>
+  <div class="side-status">
+    <p class="status"><span class="dot" aria-hidden="true"></span><span id="status-text">Not connected</span></p>
+    <p id="signal"></p>
+    <p id="uptime"></p>
+  </div>
+</nav>
+<div class="backdrop" id="backdrop"></div>
 
 <main>
-  <header class="topbar">
-    <div>
-      <h1>Irrigation node</h1>
-      <p class="sub">ESP32-S3 in the pot, forecasting soil moisture on the board</p>
-    </div>
-    <p id="status" class="status" data-state="idle">
-      <span class="dot" aria-hidden="true"></span>
-      <span id="status-text">Not connected</span>
-    </p>
+  <header class="pagehead">
+    <button id="menu" type="button" class="menu" aria-controls="side" aria-expanded="true">
+      <span class="bars" aria-hidden="true"><i></i><i></i><i></i></span>Menu
+    </button>
+    <h1 id="page-title">Dashboard</h1>
+    <span class="dot head-dot" aria-hidden="true"></span>
   </header>
 
   <form id="login" class="card login" hidden>
@@ -35,7 +50,8 @@
 
   <div id="app" hidden>
 
-    <section class="tiles">
+  <section class="page" data-page="dashboard">
+    <div class="tiles">
       <div class="tile" data-kind="soil">
         <span class="tile-label">Soil moisture</span>
         <span class="tile-value"><b id="soil">–</b><small>%</small></span>
@@ -66,7 +82,7 @@
         <span class="tile-value"><b id="light">–</b><small>/ 4095</small></span>
         <figure class="spark" id="spark-light"></figure>
       </div>
-    </section>
+    </div>
 
     <section class="card hero">
       <div class="card-head">
@@ -93,29 +109,7 @@
       </p>
     </section>
 
-    <section class="card check">
-      <div class="card-head">
-        <div>
-          <h2>Is the model right?</h2>
-          <p class="sub" id="skill-text">Every hour the node records what it expects the soil to do. Once that hour has passed, the forecast is compared with what the probe measured, and with the simplest alternative of assuming nothing changes.</p>
-        </div>
-      </div>
-      <figure class="chart" id="check-chart" aria-label="Hourly soil moisture measured against what the model predicted two hours earlier"></figure>
-      <p class="legend">
-        <span><i class="swatch soil"></i>Measured, hourly</span>
-        <span><i class="swatch predicted"></i>Predicted two hours earlier</span>
-      </p>
-      <div class="table-wrap">
-        <table id="skill-table">
-          <thead>
-            <tr><th>Horizon</th><th>Forecasts checked</th><th>Model error</th><th>No-change error</th><th>Skill</th></tr>
-          </thead>
-          <tbody></tbody>
-        </table>
-      </div>
-    </section>
-
-    <section class="traces">
+    <div class="traces">
       <div class="card trace" data-kind="soil-temp">
         <div class="card-head"><h2>Soil temperature</h2><span class="now" id="now-soil-temp"></span></div>
         <figure class="chart small" id="trace-soil-temp" data-title="Soil temperature, °C"></figure>
@@ -145,10 +139,114 @@
         </label>
         <p class="sub">Opens the solenoid until switched off again. Automatic watering uses short pulses instead.</p>
       </div>
+    </div>
+  </section>
+
+  <section class="page" data-page="model" hidden>
+    <section class="card scenario">
+      <div class="card-head">
+        <div>
+          <h2>Try the model on the node</h2>
+          <p class="sub">Pick a soil history. The page sends it to the ESP32, which runs its five models on it and sends back what it expects the next day to look like.</p>
+        </div>
+        <span class="badge" id="sim-badge">On device</span>
+      </div>
+      <div class="scenario-controls">
+        <div class="choices" id="scenarios">
+          <button type="button" class="choice" data-scenario="watered-now">Watered an hour ago</button>
+          <button type="button" class="choice" data-scenario="watered-yesterday">Watered yesterday</button>
+          <button type="button" class="choice" data-scenario="drying">Drying steadily</button>
+          <button type="button" class="choice" data-scenario="dry">Already dry</button>
+        </div>
+        <label class="field">
+          <span>Time of day</span>
+          <select id="sim-hour">
+            <option value="morning">Morning</option>
+            <option value="midday" selected>Midday</option>
+            <option value="evening">Evening</option>
+            <option value="night">Night</option>
+          </select>
+        </label>
+      </div>
+      <figure class="chart" id="sim-chart" aria-label="The chosen soil history and the trajectory the node predicted from it"></figure>
+      <p class="legend">
+        <span><i class="swatch soil"></i>History given to the node</span>
+        <span><i class="swatch predicted"></i>Predicted on the node</span>
+        <span><i class="swatch persist"></i>If nothing changed</span>
+        <span><i class="swatch threshold"></i>Watering threshold</span>
+      </p>
+      <p class="sub" id="sim-note">Choose a history to start.</p>
     </section>
 
+    <section class="card check">
+      <div class="card-head">
+        <div>
+          <h2>Is the model right?</h2>
+          <p class="sub" id="skill-text">Every hour the node records what it expects the soil to do. Once that hour has passed, the forecast is compared with what the probe measured, and with the simplest alternative of assuming nothing changes.</p>
+        </div>
+      </div>
+      <figure class="chart" id="check-chart" aria-label="Hourly soil moisture measured against what the model predicted two hours earlier"></figure>
+      <p class="legend">
+        <span><i class="swatch soil"></i>Measured, hourly</span>
+        <span><i class="swatch predicted"></i>Predicted two hours earlier</span>
+      </p>
+      <div class="table-wrap">
+        <table id="skill-table">
+          <thead>
+            <tr><th>Horizon</th><th>Forecasts checked</th><th>Model error</th><th>No-change error</th><th>Skill</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card trained">
+      <div class="card-head">
+        <div>
+          <h2>How it was trained</h2>
+          <p class="sub">Gradient boosting fitted on twelve soil moisture stations across the United States, from 2018, and tested on the last year of that record. Skill is against assuming no change: 1 would be perfect, 0 is no better than the guess.</p>
+        </div>
+      </div>
+      <dl class="facts">
+        <div><dt>Models on the board</dt><dd>5</dd></div>
+        <div><dt>Horizons</dt><dd>2 to 24 h</dd></div>
+        <div><dt>Features per model</dt><dd>44 to 64</dd></div>
+        <div><dt>Flash used</dt><dd>2.4 MB</dd></div>
+        <div><dt>Inference on this node</dt><dd id="fact-inference">–</dd></div>
+      </dl>
+      <div class="trained-body">
+        <div>
+          <h3>Skill by horizon, all stations</h3>
+          <figure class="chart" id="skill-chart" aria-label="Skill against persistence for each of the five horizons"></figure>
+        </div>
+        <div class="table-wrap">
+          <h3>Skill by station</h3>
+          <table class="stations">
+            <thead><tr><th>Station</th><th>2 h</th><th>4 h</th><th>8 h</th><th>16 h</th><th>24 h</th></tr></thead>
+            <tbody>
+              <tr><td>Elgin, Arizona</td><td>0.17</td><td>0.27</td><td>0.32</td><td>0.34</td><td>0.02</td></tr>
+              <tr><td>Williams, Arizona</td><td>0.15</td><td>0.20</td><td>0.26</td><td>0.22</td><td>0.04</td></tr>
+              <tr><td>Bedford, Indiana</td><td>0.00</td><td>0.00</td><td>0.03</td><td>0.10</td><td>0.17</td></tr>
+              <tr><td>Joplin, Missouri</td><td>0.01</td><td>0.04</td><td>0.11</td><td>0.17</td><td>0.20</td></tr>
+              <tr><td>Asheville, North Carolina</td><td>0.05</td><td>0.06</td><td>0.11</td><td>0.22</td><td>0.29</td></tr>
+              <tr><td>Durham, North Carolina</td><td>0.05</td><td>0.08</td><td>0.15</td><td>0.25</td><td>0.33</td></tr>
+              <tr><td>McClellanville, South Carolina</td><td>0.04</td><td>0.08</td><td>0.15</td><td>0.26</td><td>0.33</td></tr>
+              <tr><td>Sioux Falls, South Dakota</td><td class="neg">-0.00</td><td>0.02</td><td>0.05</td><td>0.11</td><td>0.16</td></tr>
+              <tr><td>Crossville, Tennessee</td><td>0.06</td><td>0.09</td><td>0.14</td><td>0.22</td><td>0.30</td></tr>
+              <tr><td>Austin, Texas</td><td>0.06</td><td>0.09</td><td>0.15</td><td>0.24</td><td>0.28</td></tr>
+              <tr><td>Monahans, Texas</td><td class="neg">-0.03</td><td class="neg">-0.06</td><td class="neg">-0.06</td><td>0.02</td><td>0.00</td></tr>
+              <tr><td>Elkins, West Virginia</td><td>0.05</td><td>0.07</td><td>0.12</td><td>0.26</td><td>0.32</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <p class="sub">The two hour model is the hardest to beat because so little changes in two hours. The desert stations in Texas and Arizona are where the weather forecast features matter most, and Monahans is the one place the model lost to the no-change guess.</p>
+    </section>
+  </section>
+
+  <section class="page" data-page="settings" hidden>
     <section class="card settings">
-      <div class="card-head"><div><h2>Settings</h2><p class="sub">Saved on the node the moment a value changes</p></div></div>
+      <div class="card-head"><div><h2>Watering</h2><p class="sub">Saved on the node the moment a value changes</p></div></div>
       <div class="settings-grid">
         <div class="setting wide">
           <span class="label">Water automatically when the countdown is inside the lead time</span>
@@ -170,30 +268,44 @@
           <span class="label">Watering pulse, seconds</span>
           <input id="pulse" class="number" type="number" min="1" max="120" step="1">
         </div>
+      </div>
+    </section>
+
+    <section class="card settings">
+      <div class="card-head"><div><h2>Probe</h2><p class="sub">The percentage is measured between these two readings</p></div></div>
+      <div class="settings-grid">
         <div class="setting">
-          <span class="label">Probe reading when dry</span>
+          <span class="label">Reading when dry</span>
           <input id="dry" class="number" type="number" min="0" max="4095" step="1">
         </div>
         <div class="setting">
-          <span class="label">Probe reading when wet</span>
+          <span class="label">Reading when wet</span>
           <input id="wet" class="number" type="number" min="0" max="4095" step="1">
         </div>
       </div>
-      <p class="sub">The percentage is measured between the dry and wet readings. The current pair came from the fork in air and in a glass of water. For a pot, take the wet reading once it has stopped draining and the dry one when the reading stops falling.</p>
+      <p class="sub">The current pair came from the fork in air and in a glass of water. For a pot, take the wet reading once it has stopped draining and the dry one when the reading stops falling.</p>
     </section>
 
-    <footer id="foot">
-      <span id="signal"></span>
-      <span id="uptime"></span>
-      <button id="forget" type="button" class="link">Forget password</button>
-    </footer>
+    <section class="card settings">
+      <div class="card-head"><div><h2>Connection</h2></div></div>
+      <div class="settings-grid">
+        <div class="setting"><span class="label">Node</span><span class="value">node1</span></div>
+        <div class="setting"><span class="label">Broker</span><span class="value">HiveMQ Cloud, Frankfurt</span></div>
+        <div class="setting wide">
+          <span class="label">The broker password is kept in this browser</span>
+          <button id="forget" type="button" class="quiet-button">Forget password</button>
+        </div>
+      </div>
+    </section>
+  </section>
+
   </div>
 </main>
 
 <div id="tooltip" class="tooltip" hidden></div>
 
 <script src="https://cdn.jsdelivr.net/npm/mqtt@5.10.1/dist/mqtt.min.js"></script>
-<script src="charts.js?v=202609122144"></script>
-<script src="app.js?v=202609122144"></script>
+<script src="charts.js?v=202609122204"></script>
+<script src="app.js?v=202609122204"></script>
 </body>
 </html>

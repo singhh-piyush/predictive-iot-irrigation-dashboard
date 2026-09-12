@@ -8,11 +8,18 @@ const LOOKBACK_S = 12 * 3600;
 const AHEAD_S = 24 * 3600;
 const CHECK_SPAN_S = 48 * 3600;
 const MISSING = -32768;
+const PAGES = ["dashboard", "model", "settings"];
+const SIM_TIMEOUT_MS = 6000;
+
+// skill against persistence per horizon from the training run, all stations pooled
+const TRAINED_SKILL = { labels: ["2 h", "4 h", "8 h", "16 h", "24 h"], values: [0.05, 0.08, 0.13, 0.20, 0.20] };
+
+// the indoor weather profile the node uses puts solar noon at 18:00 UTC, so
+// each time of day is expressed as an hour on that clock
+const TIME_OF_DAY = { morning: 12, midday: 18, evening: 0, night: 6 };
 
 const el = (id) => document.getElementById(id);
-const status = el("status");
 const statusText = el("status-text");
-const dot = status.querySelector(".dot");
 const relay = el("relay");
 
 const data = {
@@ -22,11 +29,13 @@ const data = {
 let client = null;
 let lastMessage = 0;
 let nodeOnline = false;
+let page = "dashboard";
+const sim = { id: 0, scenario: null, hourStart: 0, theta: null, result: null, timer: null };
 
 function show(section, on) { section.hidden = !on; }
 
 function setStatus(state, text) {
-  status.dataset.state = state;
+  document.body.dataset.node = state;
   statusText.textContent = text;
 }
 
@@ -39,16 +48,23 @@ function ago(ms) {
   return `${h} h ${m - h * 60} min ago`;
 }
 
+function nodeReachable() {
+  return !!client && client.connected && nodeOnline && lastMessage && Date.now() - lastMessage <= STALE_MS;
+}
+
 function refreshStatus() {
   if (!client || !client.connected) return;
   if (!lastMessage) {
     setStatus("idle", nodeOnline ? "Node online, waiting for readings" : "Waiting for the node");
-    return;
+  } else {
+    const since = Date.now() - lastMessage;
+    if (!nodeOnline) setStatus("offline", `Node offline, last reading ${ago(since)}`);
+    else if (since > STALE_MS) setStatus("offline", `No readings for ${ago(since)}`);
+    else setStatus("online", `Online, ${ago(since)}`);
   }
-  const since = Date.now() - lastMessage;
-  if (!nodeOnline) setStatus("offline", `Node offline, last reading ${ago(since)}`);
-  else if (since > STALE_MS) setStatus("offline", `No readings for ${ago(since)}`);
-  else setStatus("online", `Online, last reading ${ago(since)}`);
+  const reachable = nodeReachable();
+  document.querySelectorAll(".choice").forEach((b) => { b.disabled = !reachable; });
+  if (!sim.scenario) el("sim-note").textContent = reachable ? "Choose a history to start." : "The node has to be online, the model runs on it.";
 }
 
 function fmt(v, digits) {
@@ -62,6 +78,34 @@ function pct(raw) {
 }
 
 function now() { return Date.now() / 1000; }
+
+// Sidebar. On a wide screen it sits beside the content and the choice is kept,
+// on a narrow one it slides over the content and starts closed.
+const narrow = matchMedia("(max-width: 900px)");
+
+function setSide(open, remember) {
+  document.body.dataset.side = open ? "open" : "closed";
+  el("menu").setAttribute("aria-expanded", String(open));
+  if (remember && !narrow.matches) localStorage.setItem("sidebar", open ? "open" : "closed");
+}
+
+function initSide() {
+  if (narrow.matches) setSide(false);
+  else setSide(localStorage.getItem("sidebar") !== "closed");
+}
+
+function showPage(name) {
+  if (!PAGES.includes(name)) name = "dashboard";
+  page = name;
+  document.querySelectorAll(".page").forEach((s) => show(s, s.dataset.page === name));
+  document.querySelectorAll(".pages a").forEach((a) => {
+    if (a.dataset.page === name) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
+  });
+  el("page-title").textContent = name[0].toUpperCase() + name.slice(1);
+  if (narrow.matches) setSide(false);
+  window.scrollTo(0, 0);
+  if (data.history) renderAll();
+}
 
 function renderReadings(s) {
   const sat = pct(s.soil_raw);
@@ -94,6 +138,21 @@ function historyPoints(field, scaleBy) {
   });
 }
 
+// One sentence on where a trajectory ends up, shared by the outlook and the scenario
+function outlookSentence(f) {
+  const thr = Math.round(f.threshold * 100);
+  const nowPct = Math.round(f.levels[0] * 100);
+  const endPct = Math.round(f.levels[f.levels.length - 1] * 100);
+  if (f.crossing === 0) {
+    return `The soil is already below the watering threshold, <b>${nowPct} %</b> against ${thr} %.`;
+  }
+  if (f.crossing === null) {
+    return `Stays above the threshold for the next 24 hours. The model expects <b>${nowPct} %</b> to become <b>${endPct} %</b> by then.`;
+  }
+  const due = f.decision === "irrigate" ? " That is inside the lead time, so watering is due." : "";
+  return `Reaches the watering threshold in about <b>${f.crossing.toFixed(1)} h</b>.${due}`;
+}
+
 function renderHero() {
   const t = now();
   const f = data.forecast;
@@ -110,7 +169,7 @@ function renderHero() {
     format: (v) => `${Math.round(v)}`,
     series: [
       { name: "Measured", cls: "soil", points: measured, area: true },
-      { name: "Predicted", cls: "predicted", points: predicted, dots: true },
+      { name: "Predicted", cls: "predicted", points: predicted, dots: true, gap: 9 * 3600 },
     ],
     empty: "Waiting for the node's first readings",
   });
@@ -127,29 +186,21 @@ function renderHero() {
     show(prov, false);
     return;
   }
-  el("inference").textContent = f.inference_ms === undefined ? "On device" : `On device, ${f.inference_ms} ms`;
+  const ms = f.inference_ms === undefined ? null : `${f.inference_ms} ms`;
+  el("inference").textContent = ms ? `On device, ${ms}` : "On device";
+  el("fact-inference").textContent = ms || "–";
   if (f.crossing === 0) kpi.innerHTML = "Now";
   else if (f.crossing === null) kpi.innerHTML = `24<small>h +</small>`;
   else kpi.innerHTML = `${f.crossing.toFixed(1)}<small>h</small>`;
   pill.textContent = f.decision === "irrigate" ? "Water now" : "Hold";
   pill.dataset.state = f.decision === "irrigate" ? "irrigate" : "hold";
-  const thr = Math.round(f.threshold * 100);
-  const nowPct = Math.round(f.levels[0] * 100);
-  const endPct = Math.round(f.levels[f.levels.length - 1] * 100);
-  if (f.crossing === 0) {
-    line.innerHTML = `The soil is already below the watering threshold, <b>${nowPct} %</b> against ${thr} %.`;
-  } else if (f.crossing === null) {
-    line.innerHTML = `Stays above the threshold for the next 24 hours. The model expects <b>${nowPct} %</b> to become <b>${endPct} %</b> by then.`;
-  } else {
-    const due = f.decision === "irrigate" ? " That is inside the lead time, so watering is due." : "";
-    line.innerHTML = `Reaches the watering threshold in about <b>${f.crossing.toFixed(1)} h</b>.${due}`;
-  }
+  line.innerHTML = outlookSentence(f);
   let note = `Computed on the node at ${new Date(f.at * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.`;
   if (!f.full) {
     note += ` Built on ${f.history_hours} of the 24 hours of history the model was trained with, so provisional until tomorrow.`;
   }
   if (f.last_watering) {
-    note += `${note ? " " : ""}Last watered ${ago((t - f.last_watering) * 1000)}.`;
+    note += ` Last watered ${ago((t - f.last_watering) * 1000)}.`;
   }
   prov.textContent = note;
   show(prov, !!note);
@@ -272,6 +323,86 @@ function renderTraces() {
   }
 }
 
+// Twenty five hourly saturation values, the oldest first, for each scenario
+function scenarioHistory(name) {
+  const out = [];
+  for (let i = 0; i <= 24; i++) {
+    let v;
+    if (name === "watered-now") v = i === 24 ? 0.85 : 0.45 - 0.11 * i / 23;
+    else if (name === "watered-yesterday") v = 0.55 + 0.30 * Math.exp(-i / 10);
+    else if (name === "drying") v = 0.62 - 0.22 * i / 24;
+    else v = 0.29 - 0.04 * i / 24;
+    out.push(Math.round(v * 1000) / 1000);
+  }
+  return out;
+}
+
+function scenarioHourStart() {
+  const hour = TIME_OF_DAY[el("sim-hour").value];
+  const d = new Date();
+  d.setUTCHours(hour, 0, 0, 0);
+  return d.getTime() / 1000;
+}
+
+function runScenario(name) {
+  if (!nodeReachable()) return;
+  sim.id += 1;
+  sim.scenario = name;
+  sim.theta = scenarioHistory(name);
+  sim.hourStart = scenarioHourStart();
+  sim.result = null;
+  document.querySelectorAll(".choice").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.scenario === name)));
+  const badge = el("sim-badge");
+  badge.textContent = "Running on the node";
+  badge.dataset.state = "busy";
+  el("sim-note").textContent = "Sent to the node.";
+  client.publish(`irrigation/${NODE}/sim/set`, JSON.stringify({ id: sim.id, hour_start: sim.hourStart, theta: sim.theta }));
+  clearTimeout(sim.timer);
+  sim.timer = setTimeout(() => {
+    if (sim.result) return;
+    badge.textContent = "No answer";
+    badge.dataset.state = "busy";
+    el("sim-note").textContent = "The node did not answer. Check it is online and try again.";
+  }, SIM_TIMEOUT_MS);
+  renderSim();
+}
+
+function renderSim() {
+  const figure = el("sim-chart");
+  if (!sim.scenario) {
+    Charts.draw(figure, { x: [0, 48 * 3600], y: [0, 100], now: 24 * 3600, relative: true, step: 6, series: [],
+                          format: (v) => `${Math.round(v)}`, empty: "Choose a history above" });
+    return;
+  }
+  const hs = sim.hourStart;
+  const history = sim.theta.map((v, i) => [hs - (24 - i) * 3600, v * 100]);
+  const r = sim.result;
+  const predicted = r && r.ready ? r.hours.map((h, i) => [hs + h * 3600, r.levels[i] * 100]) : [];
+  const persist = [[hs, sim.theta[24] * 100], [hs + 24 * 3600, sim.theta[24] * 100]];
+  Charts.draw(figure, {
+    x: [hs - 24 * 3600, hs + 24 * 3600], y: [0, 100], step: 6, now: hs, shadeFrom: hs, relative: true,
+    unit: " %", gap: 25 * 3600, snap: 3600, threshold: data.config.threshold * 100, band: data.config.threshold * 100,
+    format: (v) => `${Math.round(v)}`,
+    series: [
+      { name: "History", cls: "soil", points: history, area: true },
+      { name: "If nothing changed", cls: "persist", points: persist },
+      { name: "Predicted", cls: "predicted", points: predicted, dots: true },
+    ],
+  });
+  if (!r) return;
+  const badge = el("sim-badge");
+  delete badge.dataset.state;
+  badge.textContent = r.inference_ms === undefined ? "On device" : `On device, ${r.inference_ms} ms`;
+  const note = el("sim-note");
+  if (!r.ready) { note.textContent = "The node could not run that history."; return; }
+  const when = el("sim-hour").options[el("sim-hour").selectedIndex].text.toLowerCase();
+  note.innerHTML = `Starting at ${when}: ${outlookSentence(r)}`;
+}
+
+function renderTrained() {
+  Charts.bars(el("skill-chart"), { ...TRAINED_SKILL, name: "Skill", small: true, format: (v) => v.toFixed(2) });
+}
+
 function renderSettings() {
   const c = data.config;
   const set = (id, v) => { const input = el(id); if (document.activeElement !== input) input.value = v; };
@@ -285,9 +416,8 @@ function renderSettings() {
 }
 
 function renderAll() {
-  renderHero();
-  renderCheck();
-  renderTraces();
+  if (page === "dashboard") { renderHero(); renderTraces(); }
+  else if (page === "model") { renderCheck(); renderSim(); renderHero(); }
 }
 
 function publishConfig(patch) {
@@ -302,7 +432,7 @@ function connect(password) {
     localStorage.setItem("broker-password", password);
     show(el("login"), false);
     show(el("app"), true);
-    client.subscribe(["state", "status", "forecast", "forecasts", "soil_hourly", "history", "config"]
+    client.subscribe(["state", "status", "forecast", "forecasts", "soil_hourly", "history", "config", "sim"]
       .map((s) => `irrigation/${NODE}/${s}`));
     refreshStatus();
     renderAll();
@@ -319,27 +449,31 @@ function connect(password) {
       nodeOnline = true;
       data.state = JSON.parse(text);
       renderReadings(data.state);
-      dot.classList.remove("tick");
-      void dot.offsetWidth;
-      dot.classList.add("tick");
+      document.querySelectorAll(".dot").forEach((d) => {
+        d.classList.remove("tick");
+        void d.offsetWidth;
+        d.classList.add("tick");
+      });
     } else if (kind === "forecast") {
       data.forecast = JSON.parse(text);
       renderHero();
     } else if (kind === "forecasts") {
       data.forecasts = JSON.parse(text).items || [];
-      renderCheck();
+      if (page === "model") renderCheck();
     } else if (kind === "soil_hourly") {
       data.hourly = JSON.parse(text);
-      renderCheck();
+      if (page === "model") renderCheck();
     } else if (kind === "history") {
       data.history = JSON.parse(text);
-      renderHero();
-      renderTraces();
+      renderAll();
     } else if (kind === "config") {
       data.config = { ...data.config, ...JSON.parse(text) };
       renderSettings();
       if (data.state) renderReadings(data.state);
       renderAll();
+    } else if (kind === "sim") {
+      const r = JSON.parse(text);
+      if (r.id === sim.id) { sim.result = r; renderSim(); }
     }
     refreshStatus();
   });
@@ -386,6 +520,21 @@ el("forget").addEventListener("click", () => {
   location.reload();
 });
 
+el("scenarios").addEventListener("click", (ev) => {
+  const b = ev.target.closest(".choice");
+  if (b) runScenario(b.dataset.scenario);
+});
+el("sim-hour").addEventListener("change", () => { if (sim.scenario) runScenario(sim.scenario); });
+
+el("menu").addEventListener("click", () => setSide(document.body.dataset.side !== "open", true));
+el("backdrop").addEventListener("click", () => setSide(false));
+narrow.addEventListener("change", initSide);
+window.addEventListener("hashchange", () => showPage(location.hash.slice(1)));
+
+initSide();
+showPage(location.hash.slice(1));
+renderTrained();
+renderSim();
 setInterval(refreshStatus, 1000);
 setInterval(() => { if (data.history) renderAll(); }, 60000);
 

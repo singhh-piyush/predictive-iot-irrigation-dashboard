@@ -40,6 +40,20 @@ const Charts = (() => {
     return d.toLocaleDateString([], { weekday: "short" }) + " " + clock(t);
   }
 
+  // Hours before or after a reference point, for charts with no real clock
+  function relLabel(t, from) {
+    const h = Math.round((t - from) / 3600);
+    return h === 0 ? "now" : `${h > 0 ? "+" : "\u2212"}${Math.abs(h)} h`;
+  }
+
+  function relTicks(t0, t1, from, step) {
+    const out = [];
+    for (let t = from - Math.ceil((from - t0) / (step * 3600)) * step * 3600; t <= t1; t += step * 3600) {
+      if (t >= t0) out.push(t);
+    }
+    return out;
+  }
+
   function pathFor(points, x, y, gap) {
     let d = "";
     let prev = null;
@@ -124,8 +138,10 @@ const Charts = (() => {
       s += `<line class="grid-line" x1="${pad.left}" x2="${W - pad.right}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}"/>`;
       s += `<text class="axis-text" x="${pad.left - 6}" y="${(y(v) + 4).toFixed(1)}" text-anchor="end">${fmt(v)}</text>`;
     }
-    for (const t of hourTicks(o.x[0], o.x[1], o.step || 6)) {
-      s += `<text class="axis-text" x="${x(t).toFixed(1)}" y="${H - 8}" text-anchor="middle">${clock(t)}</text>`;
+    const ticks = o.relative ? relTicks(o.x[0], o.x[1], o.now, o.step || 6) : hourTicks(o.x[0], o.x[1], o.step || 6);
+    for (const t of ticks) {
+      const label = o.relative ? relLabel(t, o.now) : clock(t);
+      s += `<text class="axis-text" x="${x(t).toFixed(1)}" y="${H - 8}" text-anchor="middle">${label}</text>`;
     }
 
     if (o.threshold !== undefined) {
@@ -133,7 +149,7 @@ const Charts = (() => {
     }
     if (o.now !== undefined) {
       s += `<line class="now" x1="${x(o.now).toFixed(1)}" x2="${x(o.now).toFixed(1)}" y1="${pad.top}" y2="${H - pad.bottom}"/>`;
-      s += `<text class="axis-text" x="${(x(o.now) + 4).toFixed(1)}" y="${pad.top + 10}">now</text>`;
+      if (!o.relative) s += `<text class="axis-text" x="${(x(o.now) + 4).toFixed(1)}" y="${pad.top + 10}">now</text>`;
     }
 
     let any = false;
@@ -141,11 +157,12 @@ const Charts = (() => {
       const pts = series.points.filter((p) => p[1] !== null && !Number.isNaN(p[1]));
       if (!pts.length) continue;
       any = true;
+      const sgap = series.gap || gap;
       if (series.area) {
         const base = y(Math.max(y0, 0));
-        s += `<path class="area ${series.cls}" d="${areaFor(series.points, x, y, gap, base)}"/>`;
+        s += `<path class="area ${series.cls}" d="${areaFor(series.points, x, y, sgap, base)}"/>`;
       }
-      s += `<path class="series ${series.cls}" d="${pathFor(series.points, x, y, gap)}"/>`;
+      s += `<path class="series ${series.cls}" d="${pathFor(series.points, x, y, sgap)}"/>`;
       if (series.dots) {
         for (const [t, v] of pts) {
           s += `<circle class="marker ${series.cls}" cx="${x(t).toFixed(1)}" cy="${y(v).toFixed(1)}" r="3.5"/>`;
@@ -180,7 +197,7 @@ const Charts = (() => {
       }
       const tip = tooltip();
       if (!lines.length) { tip.hidden = true; return; }
-      tip.innerHTML = `<div class="when">${whenLabel(when)}</div>` + lines.join("<br>");
+      tip.innerHTML = `<div class="when">${o.relative ? relLabel(when, o.now) : whenLabel(when)}</div>` + lines.join("<br>");
       tip.hidden = false;
       const tw = tip.offsetWidth;
       const left = ev.clientX + 14 + tw > window.innerWidth ? ev.clientX - 14 - tw : ev.clientX + 14;
@@ -193,5 +210,48 @@ const Charts = (() => {
     });
   }
 
-  return { draw, spark };
+  // Vertical bars from a zero baseline, for the skill by horizon figure
+  function bars(el, o) {
+    const W = o.small ? NARROW : WIDE, H = o.small ? 150 : 200;
+    const pad = o.small ? { top: 16, right: 8, bottom: 22, left: 34 } : { top: 22, right: 14, bottom: 26, left: 42 };
+    const n = o.values.length;
+    const lo = Math.min(0, ...o.values), hi = Math.max(0, ...o.values);
+    const y = scale(lo, hi * 1.15 || 1, H - pad.bottom, pad.top);
+    const slot = (W - pad.left - pad.right) / n;
+    const bw = Math.min(slot * 0.5, o.small ? 28 : 48);
+    const fmt = o.format || ((v) => String(v));
+    let s = `<svg viewBox="0 0 ${W} ${H}" role="img">`;
+    for (const v of valueTicks(lo, hi * 1.15 || 1)) {
+      s += `<line class="grid-line" x1="${pad.left}" x2="${W - pad.right}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}"/>`;
+      s += `<text class="axis-text" x="${pad.left - 6}" y="${(y(v) + 4).toFixed(1)}" text-anchor="end">${fmt(v)}</text>`;
+    }
+    s += `<line class="baseline" x1="${pad.left}" x2="${W - pad.right}" y1="${y(0).toFixed(1)}" y2="${y(0).toFixed(1)}"/>`;
+    o.values.forEach((v, i) => {
+      const cx = pad.left + slot * (i + 0.5);
+      const top = Math.min(y(v), y(0)), bottom = Math.max(y(v), y(0));
+      const r = Math.min(4, (bottom - top) / 2);
+      const x0 = cx - bw / 2, x1 = cx + bw / 2;
+      const d = v >= 0
+        ? `M${x0},${bottom}V${top + r}a${r},${r} 0 0 1 ${r},-${r}H${x1 - r}a${r},${r} 0 0 1 ${r},${r}V${bottom}Z`
+        : `M${x0},${top}V${bottom - r}a${r},${r} 0 0 0 ${r},${r}H${x1 - r}a${r},${r} 0 0 0 ${r},-${r}V${top}Z`;
+      s += `<path class="bar${v < 0 ? " neg" : ""}" d="${d}" data-i="${i}"/>`;
+      s += `<text class="bar-label" x="${cx.toFixed(1)}" y="${(v >= 0 ? top - 6 : bottom + 14).toFixed(1)}" text-anchor="middle">${fmt(v)}</text>`;
+      s += `<text class="axis-text" x="${cx.toFixed(1)}" y="${H - 8}" text-anchor="middle">${o.labels[i]}</text>`;
+    });
+    s += "</svg>";
+    el.innerHTML = s;
+    el.querySelectorAll(".bar").forEach((bar) => {
+      bar.addEventListener("mousemove", (ev) => {
+        const i = Number(bar.dataset.i);
+        const tip = tooltip();
+        tip.innerHTML = `<div class="when">${o.labels[i]}</div>${o.name || ""}: <b>${fmt(o.values[i])}</b>`;
+        tip.hidden = false;
+        tip.style.left = `${ev.clientX + 14}px`;
+        tip.style.top = `${ev.clientY + 14}px`;
+      });
+      bar.addEventListener("mouseleave", () => { tooltip().hidden = true; });
+    });
+  }
+
+  return { draw, spark, bars };
 })();
