@@ -143,10 +143,13 @@ function historyPoints(field, scaleBy) {
 }
 
 // One sentence on where a trajectory ends up, shared by the outlook and the scenario
+// saturation cannot leave 0 to 100, even if a predicted change would take it there
+function clampPct(level) { return Math.min(100, Math.max(0, Math.round(level * 100))); }
+
 function outlookSentence(f) {
   const thr = Math.round(f.threshold * 100);
-  const nowPct = Math.round(f.levels[0] * 100);
-  const endPct = Math.round(f.levels[f.levels.length - 1] * 100);
+  const nowPct = clampPct(f.levels[0]);
+  const endPct = clampPct(f.levels[f.levels.length - 1]);
   if (f.crossing === 0) {
     return `The soil is already below the watering threshold, <b>${nowPct} %</b> against ${thr} %.`;
   }
@@ -188,6 +191,7 @@ function renderHero() {
     pill.textContent = "Waiting";
     pill.dataset.state = "waiting";
     show(prov, false);
+    show(el("horizons"), false);
     return;
   }
   const ms = f.inference_ms === undefined ? null : `${f.inference_ms} ms`;
@@ -198,6 +202,9 @@ function renderHero() {
   pill.textContent = f.decision === "irrigate" ? "Water now" : "Hold";
   pill.dataset.state = f.decision === "irrigate" ? "irrigate" : "hold";
   line.innerHTML = outlookSentence(f);
+  const horizons = el("horizons");
+  horizons.innerHTML = f.hours.slice(1).map((h, i) => `<li><span>in ${h} h</span><b>${clampPct(f.levels[i + 1])} %</b></li>`).join("");
+  show(horizons, true);
   let note = `Computed on the node at ${new Date(f.at * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.`;
   if (!f.full) {
     note += ` Built on ${f.history_hours} of the 24 hours of history the model was trained with, so provisional until tomorrow.`;
