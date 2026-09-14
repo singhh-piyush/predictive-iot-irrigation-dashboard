@@ -88,19 +88,30 @@ const Charts = (() => {
     return d;
   }
 
-  // Tiny line with no axes, for the reading tiles
-  function spark(el, points, gap) {
-    const pts = points.filter((p) => p[1] !== null && !Number.isNaN(p[1]));
+  // Tiny line with no axes, for the reading tiles. o.x is the time window.
+  function spark(el, points, o) {
+    const pts = points.filter((p) => p[1] !== null && !Number.isNaN(p[1]) && p[0] >= o.x[0] && p[0] <= o.x[1]);
     if (pts.length < 2) { el.innerHTML = ""; return; }
     const W = 120, H = 30;
-    const t0 = pts[0][0], t1 = pts[pts.length - 1][0];
     let lo = Math.min(...pts.map((p) => p[1])), hi = Math.max(...pts.map((p) => p[1]));
     if (hi - lo < 1e-9) { lo -= 1; hi += 1; }
-    const x = scale(t0, t1, 1, W - 1);
+    const x = scale(o.x[0], o.x[1], 1, W - 1);
     const y = scale(lo, hi, H - 2, 3);
+    const gap = o.gap || 900;
     el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">`
-      + `<path class="fill" d="${areaFor(points, x, y, gap || 900, H)}"/>`
-      + `<path class="line" d="${pathFor(points, x, y, gap || 900)}"/></svg>`;
+      + `<path class="fill" d="${areaFor(pts, x, y, gap, H)}"/>`
+      + `<path class="line" d="${pathFor(pts, x, y, gap)}"/></svg>`;
+  }
+
+  // Points inside the window plus one either side, so a line still enters and
+  // leaves the plot at the right angle. The clip path hides the rest.
+  function inWindow(points, x0, x1) {
+    let first = -1, last = -1;
+    points.forEach((p, i) => {
+      if (p[0] < x0) first = i;
+      if (p[0] <= x1) last = i;
+    });
+    return points.slice(Math.max(0, first), Math.min(points.length, last + 2));
   }
 
   function nearest(points, t) {
@@ -124,7 +135,9 @@ const Charts = (() => {
     const fmt = o.format || ((v) => String(Math.round(v)));
     const gap = o.gap || 3600;
 
+    const clipId = `clip-${el.id || Math.random().toString(36).slice(2)}`;
     let s = `<svg viewBox="0 0 ${W} ${H}" role="img">`;
+    s += `<clipPath id="${clipId}"><rect x="${pad.left}" y="${pad.top}" width="${W - pad.left - pad.right}" height="${H - pad.top - pad.bottom}"/></clipPath>`;
     if (o.title) s += `<text class="title" x="${pad.left}" y="12">${o.title}</text>`;
     if (o.shadeFrom !== undefined) {
       s += `<rect class="shade" x="${x(o.shadeFrom).toFixed(1)}" y="${pad.top}" width="${(W - pad.right - x(o.shadeFrom)).toFixed(1)}" height="${H - pad.top - pad.bottom}"/>`;
@@ -149,26 +162,33 @@ const Charts = (() => {
     }
     if (o.now !== undefined) {
       s += `<line class="now" x1="${x(o.now).toFixed(1)}" x2="${x(o.now).toFixed(1)}" y1="${pad.top}" y2="${H - pad.bottom}"/>`;
-      if (!o.relative) s += `<text class="axis-text" x="${(x(o.now) + 4).toFixed(1)}" y="${pad.top + 10}">now</text>`;
+      if (!o.relative) {
+        // the label sits to the left of the line when the line is at the right edge
+        const flip = x(o.now) > W - pad.right - 34;
+        s += `<text class="axis-text" x="${(x(o.now) + (flip ? -4 : 4)).toFixed(1)}" y="${pad.top + 10}"${flip ? ' text-anchor="end"' : ""}>now</text>`;
+      }
     }
 
     let any = false;
+    s += `<g clip-path="url(#${clipId})">`;
     for (const series of o.series) {
-      const pts = series.points.filter((p) => p[1] !== null && !Number.isNaN(p[1]));
+      const shown = inWindow(series.points, o.x[0], o.x[1]);
+      const pts = shown.filter((p) => p[1] !== null && !Number.isNaN(p[1]));
       if (!pts.length) continue;
       any = true;
       const sgap = series.gap || gap;
       if (series.area) {
         const base = y(Math.max(y0, 0));
-        s += `<path class="area ${series.cls}" d="${areaFor(series.points, x, y, sgap, base)}"/>`;
+        s += `<path class="area ${series.cls}" d="${areaFor(shown, x, y, sgap, base)}"/>`;
       }
-      s += `<path class="series ${series.cls}" d="${pathFor(series.points, x, y, sgap)}"/>`;
+      s += `<path class="series ${series.cls}" d="${pathFor(shown, x, y, sgap)}"/>`;
       if (series.dots) {
         for (const [t, v] of pts) {
           s += `<circle class="marker ${series.cls}" cx="${x(t).toFixed(1)}" cy="${y(v).toFixed(1)}" r="3.5"/>`;
         }
       }
     }
+    s += "</g>";
     if (!any) {
       s += `<text class="empty" x="${(W / 2).toFixed(0)}" y="${(H / 2).toFixed(0)}" text-anchor="middle">${o.empty || "Nothing recorded yet"}</text>`;
     }

@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=202609140011">
+<link rel="stylesheet" href="style.css?v=202609140033">
 </head>
 <body data-side="open" data-node="idle">
 
@@ -21,11 +21,6 @@
     <li><a href="#model" data-page="model">Model</a></li>
     <li><a href="#settings" data-page="settings">Settings</a></li>
   </ul>
-  <div class="side-status">
-    <p class="status"><span class="dot" aria-hidden="true"></span><span id="status-text">Not connected</span></p>
-    <p id="signal"></p>
-    <p id="uptime"></p>
-  </div>
 </nav>
 <div class="backdrop" id="backdrop"></div>
 
@@ -51,6 +46,12 @@
   <div id="app" hidden>
 
   <section class="page" data-page="dashboard">
+    <div class="strip">
+      <span class="status"><span class="dot" aria-hidden="true"></span><span id="status-text">Not connected</span></span>
+      <span id="signal"></span>
+      <span id="uptime"></span>
+      <span id="strip-valve"></span>
+    </div>
     <div class="tiles">
       <div class="tile" data-kind="soil">
         <span class="tile-label">Soil moisture</span>
@@ -143,44 +144,27 @@
   </section>
 
   <section class="page" data-page="model" hidden>
-    <div class="tiles model">
-      <div class="tile" data-kind="predicted">
-        <span class="tile-label">Time to run</span>
-        <span class="tile-value"><b id="fact-inference">–</b><small>ms</small></span>
-        <span class="tile-note">Five models on the ESP32</span>
-      </div>
-      <div class="tile" data-kind="soil">
-        <span class="tile-label">Looks ahead</span>
-        <span class="tile-value"><b>24</b><small>h</small></span>
-        <span class="tile-note">Steps at 2, 4, 8, 16 and 24 h</span>
-      </div>
-      <div class="tile" data-kind="soil">
-        <span class="tile-label">Forecasts checked</span>
-        <span class="tile-value"><b id="fact-checked">–</b></span>
-        <span class="tile-note">Two hour forecasts so far</span>
-      </div>
-      <div class="tile" data-kind="predicted">
-        <span class="tile-label">Skill so far</span>
-        <span class="tile-value"><b id="fact-skill">–</b></span>
-        <span class="tile-note">1 is perfect, 0 is no better than no change</span>
-      </div>
-    </div>
-
     <section class="card scenario">
       <div class="card-head">
         <div>
-          <h2>Try it</h2>
-          <p class="sub">Pick a soil history. The node predicts the next day from it.</p>
+          <h2>Try the model</h2>
+          <p class="sub">Shape a day of soil history. The node runs its models on it and predicts the next day.</p>
         </div>
         <span class="badge" id="sim-badge">On device</span>
       </div>
-      <div class="scenario-controls">
-        <div class="choices" id="scenarios">
-          <button type="button" class="choice" data-scenario="watered-now">Watered an hour ago</button>
-          <button type="button" class="choice" data-scenario="watered-yesterday">Watered yesterday</button>
-          <button type="button" class="choice" data-scenario="drying">Drying</button>
-          <button type="button" class="choice" data-scenario="dry">Already dry</button>
-        </div>
+      <div class="sim-controls">
+        <label class="range">
+          <span>Moisture now <output id="out-now">60 %</output></span>
+          <input id="sim-now" type="range" min="5" max="95" step="1" value="60">
+        </label>
+        <label class="range">
+          <span>Last watered <output id="out-watered">20 h ago</output></span>
+          <input id="sim-watered" type="range" min="1" max="25" step="1" value="20">
+        </label>
+        <label class="range">
+          <span>Drying speed <output id="out-rate">15 % a day</output></span>
+          <input id="sim-rate" type="range" min="0" max="40" step="1" value="15">
+        </label>
         <label class="field">
           <span>Time of day</span>
           <select id="sim-hour">
@@ -191,20 +175,36 @@
           </select>
         </label>
       </div>
-      <figure class="chart" id="sim-chart" aria-label="The chosen soil history and the trajectory the node predicted from it"></figure>
+      <div class="choices" id="scenarios">
+        <span class="choices-label">Start from</span>
+        <button type="button" class="choice" data-scenario="watered-now">Just watered</button>
+        <button type="button" class="choice" data-scenario="watered-yesterday">Watered yesterday</button>
+        <button type="button" class="choice" data-scenario="drying">Drying out</button>
+        <button type="button" class="choice" data-scenario="dry">Already dry</button>
+      </div>
+      <div class="hero-body">
+        <figure class="chart" id="sim-chart" aria-label="The chosen soil history and the trajectory the node predicted from it"></figure>
+        <aside class="kpi">
+          <span class="kpi-label">Time to the watering threshold</span>
+          <span class="kpi-value" id="sim-kpi">–</span>
+          <span class="pill" id="sim-decision" data-state="waiting">Waiting</span>
+          <p class="kpi-note" id="sim-note">Move a slider to start.</p>
+          <p class="kpi-note quiet" id="sim-time" hidden></p>
+        </aside>
+      </div>
       <p class="legend">
         <span><i class="swatch soil"></i>History</span>
         <span><i class="swatch predicted"></i>Predicted</span>
+        <span><i class="swatch previous"></i>Previous run</span>
         <span><i class="swatch persist"></i>No change</span>
         <span><i class="swatch threshold"></i>Threshold</span>
       </p>
-      <p class="sub" id="sim-note">Choose a history to start.</p>
     </section>
 
     <section class="card check">
       <div class="card-head">
         <div>
-          <h2>Predicted against measured</h2>
+          <h2>How the forecasts did</h2>
           <p class="sub" id="skill-text">Each forecast is checked against what the probe measured later.</p>
         </div>
       </div>
@@ -213,13 +213,31 @@
         <span><i class="swatch soil"></i>Measured</span>
         <span><i class="swatch predicted"></i>Predicted 2 h earlier</span>
       </p>
-      <div class="table-wrap">
-        <table id="skill-table">
-          <thead>
-            <tr><th>Horizon</th><th>Checked</th><th>Model error</th><th>No-change error</th><th>Skill</th></tr>
-          </thead>
-          <tbody></tbody>
-        </table>
+      <h3 class="spaced">Error of each two hour forecast, last three days</h3>
+      <figure class="chart" id="error-chart" aria-label="How far each two hour forecast was from the measurement, against assuming no change"></figure>
+      <p class="legend">
+        <span><i class="swatch predicted"></i>Model</span>
+        <span><i class="swatch persist"></i>No change</span>
+      </p>
+      <div class="check-tables">
+        <div class="table-wrap">
+          <h3>By horizon, last three days</h3>
+          <table id="skill-table">
+            <thead>
+              <tr><th>Horizon</th><th>Checked</th><th>Model error</th><th>No-change error</th><th>Skill</th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="table-wrap">
+          <h3>By day, two hour forecasts</h3>
+          <table id="day-table">
+            <thead>
+              <tr><th>Day</th><th>Checked</th><th>Model error</th><th>No-change error</th><th>Skill</th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
       </div>
     </section>
 
@@ -320,7 +338,7 @@
 <div id="tooltip" class="tooltip" hidden></div>
 
 <script src="https://cdn.jsdelivr.net/npm/mqtt@5.10.1/dist/mqtt.min.js"></script>
-<script src="charts.js?v=202609140011"></script>
-<script src="app.js?v=202609140011"></script>
+<script src="charts.js?v=202609140033"></script>
+<script src="app.js?v=202609140033"></script>
 </body>
 </html>

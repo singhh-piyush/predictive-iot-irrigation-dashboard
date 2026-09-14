@@ -24,13 +24,13 @@ const relay = el("relay");
 
 const data = {
   state: null, forecast: null, forecasts: [], hourly: { hours: [], raw: [] },
-  history: null, config: { auto: false, threshold: 0.3, lead: 2, pulse_s: 10, dry_raw: 4095, wet_raw: 2548 },
+  history: null, scores: [], config: { auto: false, threshold: 0.3, lead: 2, pulse_s: 10, dry_raw: 4095, wet_raw: 2548 },
 };
 let client = null;
 let lastMessage = 0;
 let nodeOnline = false;
 let page = "dashboard";
-const sim = { id: 0, scenario: null, hourStart: 0, theta: null, result: null, timer: null };
+const sim = { id: 0, sent: false, hourStart: 0, theta: null, result: null, previous: null, timer: null, debounce: null };
 
 function show(section, on) { section.hidden = !on; }
 
@@ -39,14 +39,16 @@ function setStatus(state, text) {
   statusText.textContent = text;
 }
 
-function ago(ms) {
+function duration(ms) {
   const s = Math.round(ms / 1000);
-  if (s < 60) return `${s} s ago`;
+  if (s < 60) return `${s} s`;
   const m = Math.floor(s / 60);
-  if (m < 60) return `${m} min ago`;
+  if (m < 60) return `${m} min`;
   const h = Math.floor(m / 60);
-  return `${h} h ${m - h * 60} min ago`;
+  return `${h} h ${m - h * 60} min`;
 }
+
+function ago(ms) { return `${duration(ms)} ago`; }
 
 function nodeReachable() {
   return !!client && client.connected && nodeOnline && lastMessage && Date.now() - lastMessage <= STALE_MS;
@@ -59,12 +61,13 @@ function refreshStatus() {
   } else {
     const since = Date.now() - lastMessage;
     if (!nodeOnline) setStatus("offline", `Node offline, last reading ${ago(since)}`);
-    else if (since > STALE_MS) setStatus("offline", `No readings for ${ago(since)}`);
+    else if (since > STALE_MS) setStatus("offline", `No readings for ${duration(since)}`);
     else setStatus("online", `Online, ${ago(since)}`);
   }
   const reachable = nodeReachable();
   document.querySelectorAll(".choice").forEach((b) => { b.disabled = !reachable; });
-  if (!sim.scenario) el("sim-note").textContent = reachable ? "Choose a history to start." : "The node is offline. The model runs on it.";
+  document.querySelectorAll(".sim-controls input, .sim-controls select").forEach((i) => { i.disabled = !reachable; });
+  if (!sim.result && !sim.sent) el("sim-note").textContent = reachable ? "Move a slider to start." : "The node is offline. The model runs on it.";
 }
 
 function fmt(v, digits) {
@@ -127,6 +130,7 @@ function renderReadings(s) {
   const h = Math.floor(s.uptime_s / 3600);
   const m = Math.floor((s.uptime_s % 3600) / 60);
   el("uptime").textContent = h ? `Up ${h} h ${m} min` : `Up ${m} min`;
+  el("strip-valve").textContent = s.relay ? "Valve open" : "Valve closed";
 }
 
 function historyPoints(field, scaleBy) {
@@ -188,7 +192,6 @@ function renderHero() {
   }
   const ms = f.inference_ms === undefined ? null : `${f.inference_ms} ms`;
   el("inference").textContent = ms ? `On device, ${ms}` : "On device";
-  el("fact-inference").textContent = f.inference_ms === undefined ? "–" : String(Math.round(f.inference_ms));
   if (f.crossing === 0) kpi.innerHTML = "Now";
   else if (f.crossing === null) kpi.innerHTML = `24<small>h +</small>`;
   else kpi.innerHTML = `${f.crossing.toFixed(1)}<small>h</small>`;
@@ -266,15 +269,52 @@ function renderCheck() {
     body.appendChild(tr);
   }
 
+  renderErrors(pairs[2], t);
+  renderDays();
   const text = el("skill-text");
-  el("fact-checked").textContent = headline ? String(headline.n) : "0";
-  el("fact-skill").textContent = headline ? headline.skill.toFixed(2) : "–";
   if (!headline) {
     text.textContent = "Each forecast is checked against what the probe measured later. Nothing is old enough to check yet.";
     return;
   }
   const prov = headline.provisional ? " Made with less than a day of history." : "";
   text.textContent = `Over ${headline.n} two hour forecasts the model was off by ${headline.m.toFixed(1)} points, no change by ${headline.p.toFixed(1)}.${prov}`;
+}
+
+function renderErrors(rows, t) {
+  const model = rows.map((r) => [r.t + 2 * 3600, Math.abs(r.predicted - r.observed)]);
+  const persist = rows.map((r) => [r.t + 2 * 3600, Math.abs(r.persisted - r.observed)]);
+  const hi = Math.max(5, ...model.map((p) => p[1]), ...persist.map((p) => p[1]));
+  Charts.draw(el("error-chart"), {
+    x: [t - 72 * 3600, t], y: [0, Math.ceil(hi * 1.2)], step: 12, now: t, unit: " pts", gap: 5400, snap: 1800,
+    format: (v) => v.toFixed(1),
+    series: [
+      { name: "No change", cls: "persist", points: persist, dots: true },
+      { name: "Model", cls: "predicted", points: model, dots: true },
+    ],
+    empty: "The first checked forecast appears two hours after the first full hour",
+  });
+}
+
+// One row per day from the node's own scorecard, newest first
+function renderDays() {
+  const body = el("day-table").querySelector("tbody");
+  body.innerHTML = "";
+  const days = (data.scores || []).slice().sort((a, b) => b.day - a.day);
+  if (!days.length) {
+    body.innerHTML = `<tr><td colspan="5" class="none">The node writes a row here at the end of each checked hour</td></tr>`;
+    return;
+  }
+  for (const d of days) {
+    const n = d.n[0];
+    if (!n) continue;
+    const m = Math.sqrt(d.sm[0] / n) * 100, p = Math.sqrt(d.sp[0] / n) * 100;
+    const skill = d.sp[0] > 0 ? 1 - d.sm[0] / d.sp[0] : 0;
+    const label = new Date(d.day * 1000).toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" });
+    const prov = d.prov ? `, ${d.prov} provisional` : "";
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${label}</td><td>${n}${prov}</td><td>${m.toFixed(1)} pts</td><td>${p.toFixed(1)} pts</td><td>${skill.toFixed(2)}</td>`;
+    body.appendChild(tr);
+  }
 }
 
 function renderSparks() {
@@ -286,10 +326,11 @@ function renderSparks() {
     ["spark-rain", "rain", 1],
     ["spark-light", "light", 1],
   ];
+  const t = now();
   for (const [id, field, scaleBy, asPct] of specs) {
     let points = historyPoints(field, scaleBy);
     if (asPct) points = points.map(([ts, v]) => [ts, v === null ? null : pct(v)]);
-    Charts.spark(el(id), points);
+    Charts.spark(el(id), points, { x: [t - LOOKBACK_S, t] });
   }
 }
 
@@ -322,16 +363,31 @@ function renderTraces() {
   }
 }
 
-// Twenty five hourly saturation values, the oldest first, for each scenario
-function scenarioHistory(name) {
+// Slider positions for each preset: moisture now, hours since watering, drying a day
+const PRESETS = { "watered-now": [85, 1, 10], "watered-yesterday": [60, 20, 15], drying: [40, 25, 22], dry: [25, 25, 4] };
+
+function simInputs() {
+  return { now: Number(el("sim-now").value), watered: Number(el("sim-watered").value), rate: Number(el("sim-rate").value) };
+}
+
+function showSimOutputs() {
+  const i = simInputs();
+  el("out-now").textContent = `${i.now} %`;
+  el("out-watered").textContent = i.watered >= 25 ? "over a day ago" : `${i.watered} h ago`;
+  el("out-rate").textContent = `${i.rate} % a day`;
+}
+
+// Twenty five hourly values, oldest first. Drying is a straight line back in
+// time and a watering inside the window is a step up of 35 points.
+function sliderHistory() {
+  const i = simInputs();
+  const perHour = i.rate / 100 / 24;
   const out = [];
-  for (let i = 0; i <= 24; i++) {
-    let v;
-    if (name === "watered-now") v = i === 24 ? 0.85 : 0.45 - 0.11 * i / 23;
-    else if (name === "watered-yesterday") v = 0.55 + 0.30 * Math.exp(-i / 10);
-    else if (name === "drying") v = 0.62 - 0.22 * i / 24;
-    else v = 0.29 - 0.04 * i / 24;
-    out.push(Math.round(v * 1000) / 1000);
+  for (let k = 0; k <= 24; k++) {
+    const age = 24 - k;
+    let v = i.now / 100 + perHour * age;
+    if (i.watered < 25 && age > i.watered) v -= 0.35;
+    out.push(Math.round(Math.min(0.98, Math.max(0.02, v)) * 1000) / 1000);
   }
   return out;
 }
@@ -343,14 +399,32 @@ function scenarioHourStart() {
   return d.getTime() / 1000;
 }
 
-function runScenario(name) {
+function applyPreset(name) {
+  const [nowPct, watered, rate] = PRESETS[name];
+  el("sim-now").value = nowPct;
+  el("sim-watered").value = watered;
+  el("sim-rate").value = rate;
+  simChanged(name);
+}
+
+// Any change redraws the history at once and sends it to the node a moment
+// later, so dragging a slider does not flood the broker
+function simChanged(preset) {
+  showSimOutputs();
+  document.querySelectorAll(".choice").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.scenario === preset)));
+  if (sim.result) sim.previous = { hourStart: sim.hourStart, result: sim.result };
+  sim.result = null;
+  sim.theta = sliderHistory();
+  sim.hourStart = scenarioHourStart();
+  renderSim();
+  clearTimeout(sim.debounce);
+  sim.debounce = setTimeout(runSim, 350);
+}
+
+function runSim() {
   if (!nodeReachable()) return;
   sim.id += 1;
-  sim.scenario = name;
-  sim.theta = scenarioHistory(name);
-  sim.hourStart = scenarioHourStart();
-  sim.result = null;
-  document.querySelectorAll(".choice").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.scenario === name)));
+  sim.sent = true;
   const badge = el("sim-badge");
   badge.textContent = "Running on the node";
   badge.dataset.state = "busy";
@@ -360,42 +434,52 @@ function runScenario(name) {
   sim.timer = setTimeout(() => {
     if (sim.result) return;
     badge.textContent = "No answer";
-    badge.dataset.state = "busy";
-    el("sim-note").textContent = "No answer from the node. Try again.";
+    el("sim-note").textContent = "No answer from the node. Move a slider to try again.";
   }, SIM_TIMEOUT_MS);
-  renderSim();
 }
 
 function renderSim() {
   const figure = el("sim-chart");
-  if (!sim.scenario) {
-    Charts.draw(figure, { x: [0, 48 * 3600], y: [0, 100], now: 24 * 3600, relative: true, step: 6, series: [],
-                          format: (v) => `${Math.round(v)}`, empty: "Choose a history above" });
-    return;
-  }
-  const hs = sim.hourStart;
-  const history = sim.theta.map((v, i) => [hs - (24 - i) * 3600, v * 100]);
+  const hs = sim.hourStart || scenarioHourStart();
+  const theta = sim.theta || sliderHistory();
+  const history = theta.map((v, i) => [hs - (24 - i) * 3600, v * 100]);
   const r = sim.result;
   const predicted = r && r.ready ? r.hours.map((h, i) => [hs + h * 3600, r.levels[i] * 100]) : [];
-  const persist = [[hs, sim.theta[24] * 100], [hs + 24 * 3600, sim.theta[24] * 100]];
+  const prev = sim.previous;
+  const previous = prev && prev.result.ready ? prev.result.hours.map((h, i) => [hs + h * 3600, prev.result.levels[i] * 100]) : [];
+  const persist = [[hs, theta[24] * 100], [hs + 24 * 3600, theta[24] * 100]];
   Charts.draw(figure, {
     x: [hs - 24 * 3600, hs + 24 * 3600], y: [0, 100], step: 6, now: hs, shadeFrom: hs, relative: true,
     unit: " %", gap: 25 * 3600, snap: 3600, threshold: data.config.threshold * 100, band: data.config.threshold * 100,
     format: (v) => `${Math.round(v)}`,
     series: [
       { name: "History", cls: "soil", points: history, area: true },
-      { name: "If nothing changed", cls: "persist", points: persist },
+      { name: "No change", cls: "persist", points: persist },
+      { name: "Previous run", cls: "previous", points: previous, dots: true },
       { name: "Predicted", cls: "predicted", points: predicted, dots: true },
     ],
   });
-  if (!r) return;
+  const kpi = el("sim-kpi"), pill = el("sim-decision"), note = el("sim-note"), time = el("sim-time");
+  if (!r) {
+    kpi.textContent = "–";
+    pill.textContent = "Waiting";
+    pill.dataset.state = "waiting";
+    show(time, false);
+    return;
+  }
   const badge = el("sim-badge");
   delete badge.dataset.state;
-  badge.textContent = r.inference_ms === undefined ? "On device" : `On device, ${r.inference_ms} ms`;
-  const note = el("sim-note");
+  badge.textContent = "On device";
   if (!r.ready) { note.textContent = "The node could not run that history."; return; }
+  if (r.crossing === 0) kpi.innerHTML = "Now";
+  else if (r.crossing === null) kpi.innerHTML = `24<small>h +</small>`;
+  else kpi.innerHTML = `${r.crossing.toFixed(1)}<small>h</small>`;
+  pill.textContent = r.decision === "irrigate" ? "Water now" : "Hold";
+  pill.dataset.state = r.decision === "irrigate" ? "irrigate" : "hold";
   const when = el("sim-hour").options[el("sim-hour").selectedIndex].text.toLowerCase();
   note.innerHTML = `Starting at ${when}: ${outlookSentence(r)}`;
+  time.textContent = r.inference_ms === undefined ? "Ran on the node." : `Ran on the node in ${r.inference_ms} ms.`;
+  show(time, true);
 }
 
 function renderTrained() {
@@ -416,7 +500,11 @@ function renderSettings() {
 
 function renderAll() {
   if (page === "dashboard") { renderHero(); renderTraces(); }
-  else if (page === "model") { renderCheck(); renderSim(); renderHero(); }
+  else if (page === "model") {
+    renderCheck();
+    renderSim();
+    if (!sim.sent && nodeReachable()) simChanged(null);
+  }
 }
 
 function publishConfig(patch) {
@@ -431,7 +519,7 @@ function connect(password) {
     localStorage.setItem("broker-password", password);
     show(el("login"), false);
     show(el("app"), true);
-    client.subscribe(["state", "status", "forecast", "forecasts", "soil_hourly", "history", "config", "sim"]
+    client.subscribe(["state", "status", "forecast", "forecasts", "soil_hourly", "history", "config", "sim", "scores"]
       .map((s) => `irrigation/${NODE}/${s}`));
     refreshStatus();
     renderAll();
@@ -473,6 +561,9 @@ function connect(password) {
     } else if (kind === "sim") {
       const r = JSON.parse(text);
       if (r.id === sim.id) { sim.result = r; renderSim(); }
+    } else if (kind === "scores") {
+      data.scores = JSON.parse(text).days || [];
+      if (page === "model") renderDays();
     }
     refreshStatus();
   });
@@ -521,9 +612,10 @@ el("forget").addEventListener("click", () => {
 
 el("scenarios").addEventListener("click", (ev) => {
   const b = ev.target.closest(".choice");
-  if (b) runScenario(b.dataset.scenario);
+  if (b) applyPreset(b.dataset.scenario);
 });
-el("sim-hour").addEventListener("change", () => { if (sim.scenario) runScenario(sim.scenario); });
+for (const id of ["sim-now", "sim-watered", "sim-rate"]) el(id).addEventListener("input", () => simChanged(null));
+el("sim-hour").addEventListener("change", () => simChanged(null));
 
 el("menu").addEventListener("click", () => setSide(document.body.dataset.side !== "open", true));
 el("backdrop").addEventListener("click", () => setSide(false));
@@ -533,6 +625,7 @@ window.addEventListener("hashchange", () => showPage(location.hash.slice(1)));
 initSide();
 showPage(location.hash.slice(1));
 renderTrained();
+showSimOutputs();
 renderSim();
 setInterval(refreshStatus, 1000);
 setInterval(() => { if (data.history) renderAll(); }, 60000);
