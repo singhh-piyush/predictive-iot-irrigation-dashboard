@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=202609122204">
+<link rel="stylesheet" href="style.css?v=202609140011">
 </head>
 <body data-side="open" data-node="idle">
 
@@ -87,8 +87,8 @@
     <section class="card hero">
       <div class="card-head">
         <div>
-          <h2>Soil moisture and the model's outlook</h2>
-          <p class="sub">Twelve hours measured, twenty four hours predicted by the five models running on the node</p>
+          <h2>Soil moisture</h2>
+          <p class="sub">Last 12 hours measured, next 24 predicted on the node</p>
         </div>
         <span class="badge" id="inference">On device</span>
       </div>
@@ -104,7 +104,7 @@
       </div>
       <p class="legend">
         <span><i class="swatch soil"></i>Measured</span>
-        <span><i class="swatch predicted"></i>Predicted on the node</span>
+        <span><i class="swatch predicted"></i>Predicted</span>
         <span><i class="swatch threshold"></i>Watering threshold</span>
       </p>
     </section>
@@ -137,17 +137,40 @@
           <span class="track" aria-hidden="true"></span>
           <span id="relay-text">Closed</span>
         </label>
-        <p class="sub">Opens the solenoid until switched off again. Automatic watering uses short pulses instead.</p>
+        <p class="sub">Stays open until switched off. Automatic watering uses short pulses.</p>
       </div>
     </div>
   </section>
 
   <section class="page" data-page="model" hidden>
+    <div class="tiles model">
+      <div class="tile" data-kind="predicted">
+        <span class="tile-label">Time to run</span>
+        <span class="tile-value"><b id="fact-inference">–</b><small>ms</small></span>
+        <span class="tile-note">Five models on the ESP32</span>
+      </div>
+      <div class="tile" data-kind="soil">
+        <span class="tile-label">Looks ahead</span>
+        <span class="tile-value"><b>24</b><small>h</small></span>
+        <span class="tile-note">Steps at 2, 4, 8, 16 and 24 h</span>
+      </div>
+      <div class="tile" data-kind="soil">
+        <span class="tile-label">Forecasts checked</span>
+        <span class="tile-value"><b id="fact-checked">–</b></span>
+        <span class="tile-note">Two hour forecasts so far</span>
+      </div>
+      <div class="tile" data-kind="predicted">
+        <span class="tile-label">Skill so far</span>
+        <span class="tile-value"><b id="fact-skill">–</b></span>
+        <span class="tile-note">1 is perfect, 0 is no better than no change</span>
+      </div>
+    </div>
+
     <section class="card scenario">
       <div class="card-head">
         <div>
-          <h2>Try the model on the node</h2>
-          <p class="sub">Pick a soil history. The page sends it to the ESP32, which runs its five models on it and sends back what it expects the next day to look like.</p>
+          <h2>Try it</h2>
+          <p class="sub">Pick a soil history. The node predicts the next day from it.</p>
         </div>
         <span class="badge" id="sim-badge">On device</span>
       </div>
@@ -155,7 +178,7 @@
         <div class="choices" id="scenarios">
           <button type="button" class="choice" data-scenario="watered-now">Watered an hour ago</button>
           <button type="button" class="choice" data-scenario="watered-yesterday">Watered yesterday</button>
-          <button type="button" class="choice" data-scenario="drying">Drying steadily</button>
+          <button type="button" class="choice" data-scenario="drying">Drying</button>
           <button type="button" class="choice" data-scenario="dry">Already dry</button>
         </div>
         <label class="field">
@@ -170,10 +193,10 @@
       </div>
       <figure class="chart" id="sim-chart" aria-label="The chosen soil history and the trajectory the node predicted from it"></figure>
       <p class="legend">
-        <span><i class="swatch soil"></i>History given to the node</span>
-        <span><i class="swatch predicted"></i>Predicted on the node</span>
-        <span><i class="swatch persist"></i>If nothing changed</span>
-        <span><i class="swatch threshold"></i>Watering threshold</span>
+        <span><i class="swatch soil"></i>History</span>
+        <span><i class="swatch predicted"></i>Predicted</span>
+        <span><i class="swatch persist"></i>No change</span>
+        <span><i class="swatch threshold"></i>Threshold</span>
       </p>
       <p class="sub" id="sim-note">Choose a history to start.</p>
     </section>
@@ -181,19 +204,19 @@
     <section class="card check">
       <div class="card-head">
         <div>
-          <h2>Is the model right?</h2>
-          <p class="sub" id="skill-text">Every hour the node records what it expects the soil to do. Once that hour has passed, the forecast is compared with what the probe measured, and with the simplest alternative of assuming nothing changes.</p>
+          <h2>Predicted against measured</h2>
+          <p class="sub" id="skill-text">Each forecast is checked against what the probe measured later.</p>
         </div>
       </div>
       <figure class="chart" id="check-chart" aria-label="Hourly soil moisture measured against what the model predicted two hours earlier"></figure>
       <p class="legend">
-        <span><i class="swatch soil"></i>Measured, hourly</span>
-        <span><i class="swatch predicted"></i>Predicted two hours earlier</span>
+        <span><i class="swatch soil"></i>Measured</span>
+        <span><i class="swatch predicted"></i>Predicted 2 h earlier</span>
       </p>
       <div class="table-wrap">
         <table id="skill-table">
           <thead>
-            <tr><th>Horizon</th><th>Forecasts checked</th><th>Model error</th><th>No-change error</th><th>Skill</th></tr>
+            <tr><th>Horizon</th><th>Checked</th><th>Model error</th><th>No-change error</th><th>Skill</th></tr>
           </thead>
           <tbody></tbody>
         </table>
@@ -203,24 +226,17 @@
     <section class="card trained">
       <div class="card-head">
         <div>
-          <h2>How it was trained</h2>
-          <p class="sub">Gradient boosting fitted on twelve soil moisture stations across the United States, from 2018, and tested on the last year of that record. Skill is against assuming no change: 1 would be perfect, 0 is no better than the guess.</p>
+          <h2>Training results</h2>
+          <p class="sub">Twelve US soil moisture stations, tested on their last year. Skill against no change.</p>
         </div>
       </div>
-      <dl class="facts">
-        <div><dt>Models on the board</dt><dd>5</dd></div>
-        <div><dt>Horizons</dt><dd>2 to 24 h</dd></div>
-        <div><dt>Features per model</dt><dd>44 to 64</dd></div>
-        <div><dt>Flash used</dt><dd>2.4 MB</dd></div>
-        <div><dt>Inference on this node</dt><dd id="fact-inference">–</dd></div>
-      </dl>
       <div class="trained-body">
         <div>
-          <h3>Skill by horizon, all stations</h3>
+          <h3>By horizon</h3>
           <figure class="chart" id="skill-chart" aria-label="Skill against persistence for each of the five horizons"></figure>
         </div>
         <div class="table-wrap">
-          <h3>Skill by station</h3>
+          <h3>By station</h3>
           <table class="stations">
             <thead><tr><th>Station</th><th>2 h</th><th>4 h</th><th>8 h</th><th>16 h</th><th>24 h</th></tr></thead>
             <tbody>
@@ -240,7 +256,6 @@
           </table>
         </div>
       </div>
-      <p class="sub">The two hour model is the hardest to beat because so little changes in two hours. The desert stations in Texas and Arizona are where the weather forecast features matter most, and Monahans is the one place the model lost to the no-change guess.</p>
     </section>
   </section>
 
@@ -305,7 +320,7 @@
 <div id="tooltip" class="tooltip" hidden></div>
 
 <script src="https://cdn.jsdelivr.net/npm/mqtt@5.10.1/dist/mqtt.min.js"></script>
-<script src="charts.js?v=202609122204"></script>
-<script src="app.js?v=202609122204"></script>
+<script src="charts.js?v=202609140011"></script>
+<script src="app.js?v=202609140011"></script>
 </body>
 </html>

@@ -64,7 +64,7 @@ function refreshStatus() {
   }
   const reachable = nodeReachable();
   document.querySelectorAll(".choice").forEach((b) => { b.disabled = !reachable; });
-  if (!sim.scenario) el("sim-note").textContent = reachable ? "Choose a history to start." : "The node has to be online, the model runs on it.";
+  if (!sim.scenario) el("sim-note").textContent = reachable ? "Choose a history to start." : "The node is offline. The model runs on it.";
 }
 
 function fmt(v, digits) {
@@ -188,7 +188,7 @@ function renderHero() {
   }
   const ms = f.inference_ms === undefined ? null : `${f.inference_ms} ms`;
   el("inference").textContent = ms ? `On device, ${ms}` : "On device";
-  el("fact-inference").textContent = ms || "–";
+  el("fact-inference").textContent = f.inference_ms === undefined ? "–" : String(Math.round(f.inference_ms));
   if (f.crossing === 0) kpi.innerHTML = "Now";
   else if (f.crossing === null) kpi.innerHTML = `24<small>h +</small>`;
   else kpi.innerHTML = `${f.crossing.toFixed(1)}<small>h</small>`;
@@ -267,15 +267,14 @@ function renderCheck() {
   }
 
   const text = el("skill-text");
+  el("fact-checked").textContent = headline ? String(headline.n) : "0";
+  el("fact-skill").textContent = headline ? headline.skill.toFixed(2) : "–";
   if (!headline) {
-    text.textContent = "Every hour the node records what it expects the soil to do. Once that hour has passed, the forecast is compared with what the probe measured, and with the simplest alternative of assuming nothing changes. Nothing is old enough to check yet.";
+    text.textContent = "Each forecast is checked against what the probe measured later. Nothing is old enough to check yet.";
     return;
   }
-  const verdict = headline.skill > 0
-    ? `That is a skill of ${headline.skill.toFixed(2)}, where 1 would be perfect and 0 would be no better than assuming no change.`
-    : `That is a skill of ${headline.skill.toFixed(2)}, so the model has not beaten the no-change guess yet.`;
-  const prov = headline.provisional ? " These forecasts were made with less than a day of history." : "";
-  text.textContent = `Over ${headline.n} checked two hour forecasts the model was off by ${headline.m.toFixed(1)} points of saturation on average, against ${headline.p.toFixed(1)} for assuming nothing changes. ${verdict}${prov}`;
+  const prov = headline.provisional ? " Made with less than a day of history." : "";
+  text.textContent = `Over ${headline.n} two hour forecasts the model was off by ${headline.m.toFixed(1)} points, no change by ${headline.p.toFixed(1)}.${prov}`;
 }
 
 function renderSparks() {
@@ -362,7 +361,7 @@ function runScenario(name) {
     if (sim.result) return;
     badge.textContent = "No answer";
     badge.dataset.state = "busy";
-    el("sim-note").textContent = "The node did not answer. Check it is online and try again.";
+    el("sim-note").textContent = "No answer from the node. Try again.";
   }, SIM_TIMEOUT_MS);
   renderSim();
 }

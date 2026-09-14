@@ -276,6 +276,9 @@ button {
 .tile[data-kind="humidity"], .trace[data-kind="humidity"] { --accent: var(--humidity); }
 .tile[data-kind="rain"], .trace[data-kind="rain"] { --accent: var(--rain); }
 .tile[data-kind="light"], .trace[data-kind="light"] { --accent: var(--light); }
+.tile[data-kind="predicted"] { --accent: var(--predicted); }
+.tiles.model { grid-template-columns: repeat(4, 1fr); }
+.tile-note { display: block; margin-top: 6px; font-size: 12.5px; line-height: 1.4; color: var(--quiet); }
 
 .tile-label {
   display: block;
@@ -495,17 +498,6 @@ td.neg { color: var(--warn); }
 
 .field { display: flex; align-items: center; gap: 10px; font-size: 13.5px; color: var(--quiet); }
 
-.facts {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 12px;
-  margin: 4px 0 18px;
-}
-
-.facts div { padding: 12px 14px; background: var(--ground); border-radius: 10px; }
-.facts dt { font-size: 12.5px; color: var(--quiet); }
-.facts dd { margin: 4px 0 0; font-size: 20px; font-weight: 500; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
-
 .trained-body {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -515,7 +507,6 @@ td.neg { color: var(--warn); }
 
 .trained-body .table-wrap { margin-top: 0; }
 .stations td, .stations th { padding: 6px 6px; font-size: 13.5px; }
-.trained > .sub { margin-top: 14px; }
 
 .settings-grid {
   display: grid;
@@ -545,11 +536,11 @@ td.neg { color: var(--warn); }
   body[data-side="open"] .backdrop { display: block; }
   .head-dot { display: block; }
   .tiles { grid-template-columns: repeat(3, 1fr); }
+  .tiles.model { grid-template-columns: repeat(2, 1fr); }
   .traces { grid-template-columns: repeat(2, 1fr); }
   .hero-body { grid-template-columns: 1fr; }
   .kpi { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 6px 18px; }
   .kpi-note { flex-basis: 100%; }
-  .facts { grid-template-columns: repeat(3, 1fr); }
   .trained-body { grid-template-columns: 1fr; }
 }
 
@@ -558,7 +549,6 @@ td.neg { color: var(--warn); }
   .tiles { grid-template-columns: repeat(2, 1fr); }
   .traces { grid-template-columns: 1fr; }
   .settings-grid { grid-template-columns: 1fr; }
-  .facts { grid-template-columns: repeat(2, 1fr); }
   .card { padding: 14px 14px 12px; }
 }
 
