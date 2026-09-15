@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=202609140126">
+<link rel="stylesheet" href="style.css?v=202609151532">
 </head>
 <body data-side="open" data-node="idle">
 
@@ -18,6 +18,7 @@
   </div>
   <ul class="pages">
     <li><a href="#dashboard" data-page="dashboard">Dashboard</a></li>
+    <li><a href="#history" data-page="history">History</a></li>
     <li><a href="#model" data-page="model">Model</a></li>
     <li><a href="#settings" data-page="settings">Settings</a></li>
   </ul>
@@ -51,6 +52,7 @@
       <span id="signal"></span>
       <span id="uptime"></span>
       <span id="strip-valve"></span>
+      <span id="strip-watered"></span>
     </div>
     <div class="tiles">
       <div class="tile" data-kind="soil">
@@ -89,14 +91,14 @@
       <div class="card-head">
         <div>
           <h2>Soil moisture</h2>
-          <p class="sub">Last 12 hours measured, next 24 predicted on the node</p>
+          <p class="sub" id="hero-sub">Last 12 hours measured, next 24 predicted on the node</p>
         </div>
         <span class="badge" id="inference">On device</span>
       </div>
       <div class="hero-body">
         <figure class="chart" id="soil-chart" aria-label="Soil moisture over the last twelve hours and the model's trajectory for the next twenty four"></figure>
         <aside class="kpi">
-          <span class="kpi-label">Time to the watering threshold</span>
+          <span class="kpi-label">Time until the soil needs water</span>
           <span class="kpi-value" id="kpi-hours">–</span>
           <span class="pill" id="decision" data-state="hold">Hold</span>
           <p class="kpi-note" id="countdown">Waiting for the node.</p>
@@ -107,7 +109,7 @@
       <p class="legend">
         <span><i class="swatch soil"></i>Measured</span>
         <span><i class="swatch predicted"></i>Predicted</span>
-        <span><i class="swatch threshold"></i>Watering threshold</span>
+        <span><i class="swatch threshold"></i>Watering level</span>
       </p>
     </section>
 
@@ -139,7 +141,66 @@
           <span class="track" aria-hidden="true"></span>
           <span id="relay-text">Closed</span>
         </label>
-        <p class="sub">Stays open until switched off. Automatic watering uses short pulses.</p>
+        <p class="sub">Stays open until you switch it off. Automatic watering opens it for a short pulse instead.</p>
+        <div class="watered">
+          <span class="tile-label">Last watered</span>
+          <b id="last-watered">–</b>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="page" data-page="history" hidden>
+    <div class="daybar">
+      <button type="button" id="day-prev" class="quiet-button" aria-label="Earlier day">&lsaquo;</button>
+      <select id="day-pick" aria-label="Day"><option>No days yet</option></select>
+      <button type="button" id="day-next" class="quiet-button" aria-label="Later day">&rsaquo;</button>
+    </div>
+
+    <section class="card">
+      <div class="card-head">
+        <div>
+          <h2>Soil moisture</h2>
+          <p class="sub">A point every five minutes, kept on the node's flash and sent to the broker day by day</p>
+        </div>
+      </div>
+      <div class="hero-body">
+        <figure class="chart" id="day-soil" aria-label="Soil moisture through the chosen day"></figure>
+        <aside class="kpi">
+          <span class="kpi-label">This day</span>
+          <ul class="horizons" id="day-summary"></ul>
+        </aside>
+      </div>
+      <p class="legend">
+        <span><i class="swatch soil"></i>Measured</span>
+        <span><i class="swatch threshold"></i>Watering level</span>
+      </p>
+    </section>
+
+    <div class="traces">
+      <div class="card trace" data-kind="soil-temp">
+        <div class="card-head"><h2>Soil temperature</h2><span class="now" id="day-now-soil-temp"></span></div>
+        <figure class="chart small" id="day-soil-temp" data-title="Soil temperature, °C"></figure>
+      </div>
+      <div class="card trace" data-kind="air-temp">
+        <div class="card-head"><h2>Air temperature</h2><span class="now" id="day-now-air-temp"></span></div>
+        <figure class="chart small" id="day-air-temp" data-title="Air temperature, °C"></figure>
+      </div>
+      <div class="card trace" data-kind="humidity">
+        <div class="card-head"><h2>Humidity</h2><span class="now" id="day-now-humidity"></span></div>
+        <figure class="chart small" id="day-humidity" data-title="Humidity, %"></figure>
+      </div>
+      <div class="card trace" data-kind="light">
+        <div class="card-head"><h2>Light</h2><span class="now" id="day-now-light"></span></div>
+        <figure class="chart small" id="day-light" data-title="Light"></figure>
+      </div>
+      <div class="card trace" data-kind="rain">
+        <div class="card-head"><h2>Rain plate</h2><span class="now" id="day-now-rain"></span></div>
+        <figure class="chart small" id="day-rain" data-title="Rain plate"></figure>
+      </div>
+      <div class="card trace" data-kind="valve">
+        <div class="card-head"><h2>Valve</h2><span class="now" id="day-now-relay"></span></div>
+        <figure class="chart small" id="day-relay" data-title="Valve"></figure>
       </div>
     </div>
   </section>
@@ -186,7 +247,7 @@
       <div class="hero-body">
         <figure class="chart" id="sim-chart" aria-label="The chosen soil history and the trajectory the node predicted from it"></figure>
         <aside class="kpi">
-          <span class="kpi-label">Time to the watering threshold</span>
+          <span class="kpi-label">Time until the soil needs water</span>
           <span class="kpi-value" id="sim-kpi">–</span>
           <span class="pill" id="sim-decision" data-state="waiting">Waiting</span>
           <p class="kpi-note" id="sim-note">Move a slider to start.</p>
@@ -198,7 +259,7 @@
         <span><i class="swatch predicted"></i>Predicted</span>
         <span><i class="swatch previous"></i>Previous run</span>
         <span><i class="swatch persist"></i>No change</span>
-        <span><i class="swatch threshold"></i>Threshold</span>
+        <span><i class="swatch threshold"></i>Watering level</span>
       </p>
     </section>
 
@@ -206,7 +267,7 @@
       <div class="card-head">
         <div>
           <h2>How the forecasts did</h2>
-          <p class="sub" id="skill-text">Each forecast is checked against what the probe measured later.</p>
+          <p class="sub" id="skill-text">Every forecast is checked against what the probe measured later.</p>
         </div>
       </div>
       <figure class="chart" id="check-chart" aria-label="Hourly soil moisture measured against what the model predicted two hours earlier"></figure>
@@ -214,7 +275,7 @@
         <span><i class="swatch soil"></i>Measured</span>
         <span><i class="swatch predicted"></i>Predicted 2 h earlier</span>
       </p>
-      <h3 class="spaced">Error of each two hour forecast, last three days</h3>
+      <h3 class="spaced">How far off each two hour forecast was, last three days</h3>
       <figure class="chart" id="error-chart" aria-label="How far each two hour forecast was from the measurement, against assuming no change"></figure>
       <p class="legend">
         <span><i class="swatch predicted"></i>Model</span>
@@ -222,10 +283,10 @@
       </p>
       <div class="check-tables">
         <div class="table-wrap">
-          <h3>By horizon, last three days</h3>
+          <h3>By hours ahead, last three days</h3>
           <table id="skill-table">
             <thead>
-              <tr><th>Horizon</th><th>Checked</th><th>Model error</th><th>No-change error</th><th>Skill</th></tr>
+              <tr><th>Hours ahead</th><th>Checked</th><th>Model error</th><th>No-change error</th><th>Skill</th></tr>
             </thead>
             <tbody></tbody>
           </table>
@@ -240,18 +301,19 @@
           </table>
         </div>
       </div>
+      <p class="sub">Error is the typical gap between a forecast and the measurement, in points of soil moisture. No change means assuming the soil stays as it is. Skill is how much better the model did than that: 1 is perfect, 0 is no better, below 0 is worse.</p>
     </section>
 
     <section class="card trained">
       <div class="card-head">
         <div>
           <h2>Training results</h2>
-          <p class="sub">Twelve US soil moisture stations, tested on their last year. Skill against no change.</p>
+          <p class="sub">Trained on twelve soil moisture stations in the United States and tested on their final year. Skill is measured against assuming no change.</p>
         </div>
       </div>
       <div class="trained-body">
         <div>
-          <h3>By horizon</h3>
+          <h3>By hours ahead</h3>
           <figure class="chart" id="skill-chart" aria-label="Skill against persistence for each of the five horizons"></figure>
         </div>
         <div class="table-wrap">
@@ -283,7 +345,7 @@
       <div class="card-head"><div><h2>Watering</h2><p class="sub">Saved on the node the moment a value changes</p></div></div>
       <div class="settings-grid">
         <div class="setting wide">
-          <span class="label">Water automatically when the countdown is inside the lead time</span>
+          <span class="label">Let the node water on its own when the soil is due to reach the watering level within the lead time</span>
           <label class="switch">
             <input id="auto" type="checkbox">
             <span class="track" aria-hidden="true"></span>
@@ -291,22 +353,22 @@
           </label>
         </div>
         <div class="setting">
-          <span class="label">Watering threshold, % of saturation</span>
+          <span class="label">Watering level, % soil moisture</span>
           <input id="threshold" class="number" type="number" min="5" max="95" step="5">
         </div>
         <div class="setting">
-          <span class="label">Lead time, hours</span>
+          <span class="label">Lead time, hours ahead to act</span>
           <input id="lead" class="number" type="number" min="1" max="24" step="1">
         </div>
         <div class="setting">
-          <span class="label">Watering pulse, seconds</span>
+          <span class="label">How long the valve opens for, seconds</span>
           <input id="pulse" class="number" type="number" min="1" max="120" step="1">
         </div>
       </div>
     </section>
 
     <section class="card settings">
-      <div class="card-head"><div><h2>Probe</h2><p class="sub">The percentage is measured between these two readings</p></div></div>
+      <div class="card-head"><div><h2>Probe</h2><p class="sub">Soil moisture is shown as a percentage between these two raw readings</p></div></div>
       <div class="settings-grid">
         <div class="setting">
           <span class="label">Reading when dry</span>
@@ -339,7 +401,7 @@
 <div id="tooltip" class="tooltip" hidden></div>
 
 <script src="https://cdn.jsdelivr.net/npm/mqtt@5.10.1/dist/mqtt.min.js"></script>
-<script src="charts.js?v=202609140126"></script>
-<script src="app.js?v=202609140126"></script>
+<script src="charts.js?v=202609151532"></script>
+<script src="app.js?v=202609151532"></script>
 </body>
 </html>

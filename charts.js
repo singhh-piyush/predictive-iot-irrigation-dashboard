@@ -10,14 +10,13 @@ const Charts = (() => {
     return (v) => r0 + (v - d0) * k;
   }
 
+  // Ticks every step hours, on multiples of the step in local clock time so a six
+  // hour step lands on 00:00, 06:00 and so on. The step can be a fraction of an hour.
   function hourTicks(t0, t1, step) {
     const out = [];
-    const d = new Date(t0 * 1000);
-    d.setMinutes(0, 0, 0);
-    d.setHours(Math.ceil(d.getHours() / step) * step);
-    for (let t = d.getTime() / 1000; t <= t1; t += step * 3600) {
-      if (t >= t0) out.push(t);
-    }
+    const stepS = step * 3600;
+    const offset = new Date(t0 * 1000).getTimezoneOffset() * 60;
+    for (let t = Math.ceil((t0 - offset) / stepS) * stepS + offset; t <= t1; t += stepS) out.push(t);
     return out;
   }
 
@@ -127,7 +126,7 @@ const Charts = (() => {
     const W = o.small ? NARROW : WIDE;
     const H = o.small ? 140 : 240;
     const pad = { ...PAD };
-    if (o.small) { pad.left = 36; pad.top = 12; pad.right = 10; }
+    if (o.small) { pad.left = 42; pad.top = 12; pad.right = 10; }
     const x = scale(o.x[0], o.x[1], pad.left, W - pad.right);
     let [y0, y1] = o.y;
     if (y1 - y0 < 1e-9) { y0 -= 1; y1 += 1; }
@@ -154,7 +153,9 @@ const Charts = (() => {
     const ticks = o.relative ? relTicks(o.x[0], o.x[1], o.now, o.step || 6) : hourTicks(o.x[0], o.x[1], o.step || 6);
     for (const t of ticks) {
       const label = o.relative ? relLabel(t, o.now) : clock(t);
-      s += `<text class="axis-text" x="${x(t).toFixed(1)}" y="${H - 8}" text-anchor="middle">${label}</text>`;
+      // a label at either edge is pulled inside the plot rather than cut off
+      const anchor = x(t) > W - pad.right - 14 ? "end" : x(t) < pad.left + 14 ? "start" : "middle";
+      s += `<text class="axis-text" x="${x(t).toFixed(1)}" y="${H - 8}" text-anchor="${anchor}">${label}</text>`;
     }
 
     if (o.threshold !== undefined) {

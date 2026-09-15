@@ -260,6 +260,18 @@ button {
 }
 
 .strip .status { display: inline-flex; align-items: center; gap: 8px; color: var(--ink); }
+
+.daybar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-bottom: 14px;
+}
+
+.daybar .quiet-button { padding: 6px 12px; font-size: 18px; line-height: 1; }
+.daybar select { min-width: 180px; }
+.kpi .horizons:empty::before { content: "Nothing recorded"; font-size: 13.5px; color: var(--quiet); }
 .strip span:empty { display: none; }
 body[data-node="offline"] .tile-value b,
 body[data-node="offline"] .trace .now { color: var(--quiet); }
@@ -286,6 +298,7 @@ body[data-node="offline"] .spark { opacity: 0.4; }
 .tile[data-kind="humidity"], .trace[data-kind="humidity"] { --accent: var(--humidity); }
 .tile[data-kind="rain"], .trace[data-kind="rain"] { --accent: var(--rain); }
 .tile[data-kind="light"], .trace[data-kind="light"] { --accent: var(--light); }
+.trace[data-kind="valve"] { --accent: var(--ink); }
 
 .tile-label {
   display: block;
@@ -363,7 +376,7 @@ body[data-node="offline"] .spark { opacity: 0.4; }
 
 .kpi-note { margin: 8px 0 0; font-size: 13.5px; line-height: 1.45; }
 .horizons { list-style: none; margin: 10px 0 0; padding: 8px 0 0; border-top: 1px solid var(--rule); font-size: 13px; }
-.horizons li { display: flex; justify-content: space-between; padding: 2px 0; color: var(--quiet); }
+.horizons li { display: flex; justify-content: space-between; gap: 12px; padding: 2px 0; color: var(--quiet); }
 .horizons b { font-weight: 500; color: var(--ink); font-variant-numeric: tabular-nums; }
 .kpi-note.quiet { color: var(--quiet); font-size: 12.5px; margin-top: 4px; }
 
@@ -450,6 +463,8 @@ td.neg { color: var(--warn); }
 .chart.small { padding: 2px 0 0; }
 
 .valve-card .sub { margin-top: 12px; }
+.watered { display: flex; flex-direction: column; gap: 4px; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--rule); }
+.watered b { font-size: 18px; font-weight: 500; font-variant-numeric: tabular-nums; }
 
 .switch { display: flex; align-items: center; gap: 12px; cursor: pointer; font-size: 15px; flex: none; }
 .switch.big { margin-top: 14px; font-size: 18px; }
@@ -572,6 +587,7 @@ h3.spaced { margin-top: 18px; }
   .hero-body { grid-template-columns: 1fr; }
   .kpi { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 6px 18px; }
   .kpi-note { flex-basis: 100%; }
+  .horizons { flex-basis: 100%; }
   .trained-body { grid-template-columns: 1fr; }
   .check-tables { grid-template-columns: 1fr; }
   .sim-controls { grid-template-columns: repeat(2, 1fr); }

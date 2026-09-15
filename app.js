@@ -8,7 +8,11 @@ const LOOKBACK_S = 12 * 3600;
 const AHEAD_S = 24 * 3600;
 const CHECK_SPAN_S = 48 * 3600;
 const MISSING = -32768;
-const PAGES = ["dashboard", "model", "settings"];
+const DAY_S = 86400;
+const MIN_HERO_S = 4 * 3600;
+const MIN_TRACE_S = 3600;
+const PAGES = ["dashboard", "history", "model", "settings"];
+const DAY_COLUMNS = ["t", "soil", "rain", "light", "soil_temp_x100", "air_temp_x10", "humidity_x10", "relay"];
 const SIM_TIMEOUT_MS = 6000;
 
 // skill against persistence per horizon from the training run, all stations pooled
@@ -24,12 +28,14 @@ const relay = el("relay");
 
 const data = {
   state: null, forecast: null, forecasts: [], hourly: { hours: [], raw: [] },
-  history: null, scores: [], config: { auto: false, threshold: 0.3, lead: 2, pulse_s: 10, dry_raw: 4095, wet_raw: 2548 },
+  history: null, days: {}, scores: [], config: { auto: false, threshold: 0.3, lead: 2, pulse_s: 10, dry_raw: 4095, wet_raw: 2548 },
 };
 let client = null;
 let lastMessage = 0;
 let nodeOnline = false;
 let page = "dashboard";
+let dayChosen = null;
+let dayCache = null;
 const sim = { id: 0, sent: false, hourStart: 0, theta: null, result: null, previous: null, timer: null, debounce: null };
 
 function show(section, on) { section.hidden = !on; }
@@ -107,7 +113,7 @@ function showPage(name) {
   el("page-title").textContent = name[0].toUpperCase() + name.slice(1);
   if (narrow.matches) setSide(false);
   window.scrollTo(0, 0);
-  if (data.history) renderAll();
+  renderAll();
 }
 
 function renderReadings(s) {
@@ -131,15 +137,38 @@ function renderReadings(s) {
   const m = Math.floor((s.uptime_s % 3600) / 60);
   el("uptime").textContent = h ? `Up ${h} h ${m} min` : `Up ${m} min`;
   el("strip-valve").textContent = s.relay ? "Valve open" : "Valve closed";
+  const watered = s.last_watering || (data.forecast && data.forecast.last_watering) || 0;
+  el("last-watered").textContent = watered ? `${ago((now() - watered) * 1000)}, ${clock(watered)}` : "Not yet";
+  el("strip-watered").textContent = watered ? `Watered ${ago((now() - watered) * 1000)}` : "";
 }
 
-function historyPoints(field, scaleBy) {
-  const h = data.history;
-  if (!h) return [];
-  return h.t.map((t, i) => {
-    const v = h[field][i];
+function columnPoints(src, field, scaleBy) {
+  if (!src) return [];
+  return src.t.map((t, i) => {
+    const v = src[field][i];
     return [t, v === MISSING ? null : v / (scaleBy || 1)];
   });
+}
+
+function historyPoints(field, scaleBy) { return columnPoints(data.history, field, scaleBy); }
+
+function clock(t) {
+  return new Date(t * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+// The live charts start at the first reading inside the last twelve hours, so a
+// node switched on an hour ago fills them instead of leaving most of the width empty
+function firstReading(t) {
+  const ts = data.history ? data.history.t : [];
+  const first = ts.find((v) => v >= t - LOOKBACK_S);
+  return first === undefined ? t : first;
+}
+
+function windowStart(t, minSpan) { return Math.min(firstReading(t), t - minSpan); }
+
+function tickStep(span) {
+  const h = span / 3600;
+  return h > 14 ? 6 : h > 7 ? 3 : h > 3 ? 1 : 0.5;
 }
 
 // One sentence on where a trajectory ends up, shared by the outlook and the scenario
@@ -151,13 +180,13 @@ function outlookSentence(f) {
   const nowPct = clampPct(f.levels[0]);
   const endPct = clampPct(f.levels[f.levels.length - 1]);
   if (f.crossing === 0) {
-    return `The soil is already below the watering threshold, <b>${nowPct} %</b> against ${thr} %.`;
+    return `The soil is already drier than the watering level: <b>${nowPct} %</b> now, watering starts at ${thr} %.`;
   }
   if (f.crossing === null) {
-    return `Stays above the threshold for the next 24 hours. The model expects <b>${nowPct} %</b> to become <b>${endPct} %</b> by then.`;
+    return `No watering needed in the next 24 hours. The model expects <b>${nowPct} %</b> now to become <b>${endPct} %</b> by then.`;
   }
-  const due = f.decision === "irrigate" ? " That is inside the lead time, so watering is due." : "";
-  return `Reaches the watering threshold in about <b>${f.crossing.toFixed(1)} h</b>.${due}`;
+  const due = f.decision === "irrigate" ? " That is within the lead time, so it is time to water." : "";
+  return `The soil should reach the watering level in about <b>${f.crossing.toFixed(1)} h</b>.${due}`;
 }
 
 function renderHero() {
@@ -168,9 +197,14 @@ function renderHero() {
     ? f.hours.map((h, i) => [f.at + h * 3600, f.levels[i] * 100]) : [];
   const values = measured.concat(predicted).map((p) => p[1]).filter((v) => v !== null);
   const lo = Math.min(0, ...values), hi = Math.max(100, ...values);
+  const x0 = windowStart(t, MIN_HERO_S);
+  const first = firstReading(t);
+  el("hero-sub").textContent = first > t - LOOKBACK_S + 300 && first < t - 60
+    ? `Measured since ${clock(first)}, next 24 hours predicted on the node`
+    : "Last 12 hours measured, next 24 predicted on the node";
 
   Charts.draw(el("soil-chart"), {
-    x: [t - LOOKBACK_S, t + AHEAD_S], y: [Math.floor(lo / 10) * 10, Math.ceil(hi / 10) * 10],
+    x: [x0, t + AHEAD_S], y: [Math.floor(lo / 10) * 10, Math.ceil(hi / 10) * 10],
     step: 6, now: t, shadeFrom: t, unit: " %", gap: 900, snap: 3600,
     threshold: data.config.threshold * 100, band: data.config.threshold * 100,
     format: (v) => `${Math.round(v)}`,
@@ -205,15 +239,8 @@ function renderHero() {
   const horizons = el("horizons");
   horizons.innerHTML = f.hours.slice(1).map((h, i) => `<li><span>in ${h} h</span><b>${clampPct(f.levels[i + 1])} %</b></li>`).join("");
   show(horizons, true);
-  let note = `Computed on the node at ${new Date(f.at * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.`;
-  if (!f.full) {
-    note += ` Built on ${f.history_hours} of the 24 hours of history the model was trained with, so provisional until tomorrow.`;
-  }
-  if (f.last_watering) {
-    note += ` Last watered ${ago((t - f.last_watering) * 1000)}.`;
-  }
-  prov.textContent = note;
-  show(prov, !!note);
+  prov.textContent = `Computed on the node at ${clock(f.at)}.`;
+  show(prov, true);
 }
 
 // Pair every logged forecast with what the hourly record later measured
@@ -280,11 +307,11 @@ function renderCheck() {
   renderDays();
   const text = el("skill-text");
   if (!headline) {
-    text.textContent = "Each forecast is checked against what the probe measured later. Nothing is old enough to check yet.";
+    text.textContent = "Every forecast is checked against what the probe measured later. Nothing is old enough to check yet.";
     return;
   }
   const prov = headline.provisional ? " Made with less than a day of history." : "";
-  text.textContent = `Over ${headline.n} two hour forecasts the model was off by ${headline.m.toFixed(1)} points, no change by ${headline.p.toFixed(1)}.${prov}`;
+  text.textContent = `Across ${headline.n} forecasts made two hours ahead, the model was off by ${headline.m.toFixed(1)} points on average. Assuming no change would have been off by ${headline.p.toFixed(1)}.${prov}`;
 }
 
 function renderErrors(rows, t) {
@@ -334,25 +361,39 @@ function renderSparks() {
     ["spark-light", "light", 1],
   ];
   const t = now();
+  const x = [windowStart(t, MIN_TRACE_S), t];
   for (const [id, field, scaleBy, asPct] of specs) {
     let points = historyPoints(field, scaleBy);
     if (asPct) points = points.map(([ts, v]) => [ts, v === null ? null : pct(v)]);
-    Charts.spark(el(id), points, { x: [t - LOOKBACK_S, t] });
+    Charts.spark(el(id), points, { x });
   }
 }
 
-function renderTraces() {
-  renderSparks();
-  const t = now();
-  const specs = [
-    ["trace-soil-temp", "soil_temp_x100", 100, 1],
-    ["trace-air-temp", "air_temp_x10", 10, 1],
-    ["trace-humidity", "humidity_x10", 10, 0],
-    ["trace-light", "light", 1, 0],
-    ["trace-rain", "rain", 1, 0],
-  ];
-  for (const [id, field, scaleBy, digits] of specs) {
-    const points = historyPoints(field, scaleBy);
+const TRACE_SPECS = [
+  ["soil-temp", "soil_temp_x100", 100, 1],
+  ["air-temp", "air_temp_x10", 10, 1],
+  ["humidity", "humidity_x10", 10, 0],
+  ["light", "light", 1, 0],
+  ["rain", "rain", 1, 0],
+];
+
+// a value held until the next change, so the valve draws as open or closed
+// rather than a slope between the two
+function stepPoints(points) {
+  const out = [];
+  points.forEach((p, i) => {
+    if (i && points[i - 1][1] !== p[1]) out.push([p[0], points[i - 1][1]]);
+    out.push(p);
+  });
+  return out;
+}
+
+// The small charts, drawn from a set of columns: the live twelve hour history on
+// the dashboard, or one day out of the day store on the history page
+function drawTraces(prefix, src, o) {
+  const specs = prefix === "day-" ? TRACE_SPECS.concat([["relay", "relay", 1, 0]]) : TRACE_SPECS;
+  for (const [kind, field, scaleBy, digits] of specs) {
+    let points = columnPoints(src, field, scaleBy);
     const values = points.map((p) => p[1]).filter((v) => v !== null);
     let lo = values.length ? Math.min(...values) : 0;
     let hi = values.length ? Math.max(...values) : 1;
@@ -360,14 +401,144 @@ function renderTraces() {
     lo -= padding; hi += padding;
     // counts and percentages cannot go below zero, so the axis should not either
     if (!digits) lo = Math.max(0, lo);
-    const figure = el(id);
+    let format = (v) => v.toFixed(digits);
+    if (field === "relay") {
+      points = stepPoints(points);
+      lo = 0; hi = 1.25;
+      format = (v) => (v >= 1 ? "Open" : v <= 0 ? "Closed" : "");
+    }
+    const figure = el(prefix + kind);
     Charts.draw(figure, {
-      x: [t - LOOKBACK_S, t], y: [lo, hi], step: 6, small: true, gap: 900, snap: 600,
-      format: (v) => v.toFixed(digits),
+      x: o.x, y: [lo, hi], step: o.step, now: o.now, small: true, gap: o.gap, snap: o.snap,
+      format,
       series: [{ name: figure.dataset.title.split(",")[0], cls: "accent", points, area: true }],
-      empty: "Nothing yet",
+      empty: o.empty,
     });
   }
+}
+
+function renderTraces() {
+  renderSparks();
+  const t = now();
+  const x0 = windowStart(t, MIN_TRACE_S);
+  drawTraces("trace-", data.history, { x: [x0, t], step: tickStep(t - x0), gap: 900, snap: 600, empty: "Nothing yet" });
+}
+
+function localMidnight(t) {
+  const d = new Date(t * 1000);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime() / 1000;
+}
+
+// Every point of every day the broker holds, sorted, and the local days they cover
+function allDays() {
+  if (dayCache) return dayCache;
+  const rows = [];
+  for (const d of Object.values(data.days)) {
+    d.t.forEach((t, i) => rows.push(DAY_COLUMNS.map((c) => d[c][i])));
+  }
+  rows.sort((a, b) => a[0] - b[0]);
+  const days = [...new Set(rows.map((r) => localMidnight(r[0])))].sort((a, b) => b - a);
+  dayCache = { rows, days };
+  return dayCache;
+}
+
+function dayColumns(day) {
+  const src = {};
+  DAY_COLUMNS.forEach((c) => { src[c] = []; });
+  for (const r of allDays().rows) {
+    if (r[0] < day || r[0] >= day + DAY_S) continue;
+    r.forEach((v, i) => src[DAY_COLUMNS[i]].push(v));
+  }
+  return src;
+}
+
+function dayLabel(day) {
+  const today = localMidnight(now());
+  if (day === today) return "Today";
+  if (day === localMidnight(today - DAY_S / 2)) return "Yesterday";
+  return new Date(day * 1000).toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" });
+}
+
+function fillDayPicker() {
+  const pick = el("day-pick");
+  const days = allDays().days;
+  if (!days.length) {
+    pick.innerHTML = "<option>No days yet</option>";
+    pick.disabled = true;
+    el("day-prev").disabled = true;
+    el("day-next").disabled = true;
+    dayChosen = null;
+    return;
+  }
+  pick.disabled = false;
+  if (dayChosen === null || !days.includes(dayChosen)) dayChosen = days[0];
+  pick.innerHTML = days.map((d) => `<option value="${d}"${d === dayChosen ? " selected" : ""}>${dayLabel(d)}</option>`).join("");
+  el("day-prev").disabled = days.indexOf(dayChosen) >= days.length - 1;
+  el("day-next").disabled = days.indexOf(dayChosen) <= 0;
+}
+
+function stepDay(dir) {
+  const days = allDays().days;
+  const i = days.indexOf(dayChosen) + dir;
+  if (i < 0 || i >= days.length) return;
+  dayChosen = days[i];
+  renderHistory();
+}
+
+function range(points, digits, unit) {
+  const values = points.map((p) => p[1]).filter((v) => v !== null);
+  if (!values.length) return "";
+  return `${Math.min(...values).toFixed(digits)} to ${Math.max(...values).toFixed(digits)}${unit}`;
+}
+
+function renderHistory() {
+  fillDayPicker();
+  const t = now();
+  const day = dayChosen === null ? localMidnight(t) : dayChosen;
+  const src = dayChosen === null ? null : dayColumns(day);
+  const x = [day, day + DAY_S];
+  const live = t >= day && t < day + DAY_S ? t : undefined;
+  const empty = dayChosen === null
+    ? "The node sends each day to the broker as it goes. The first one appears a few minutes after it starts."
+    : "Nothing recorded on this day";
+  const soil = columnPoints(src, "soil").map(([ts, v]) => [ts, v === null ? null : pct(v)]);
+  const values = soil.map((p) => p[1]).filter((v) => v !== null);
+  const lo = Math.min(0, ...values), hi = Math.max(100, ...values);
+  Charts.draw(el("day-soil"), {
+    x, y: [Math.floor(lo / 10) * 10, Math.ceil(hi / 10) * 10], step: 3, now: live,
+    unit: " %", gap: 1200, snap: 600, threshold: data.config.threshold * 100, band: data.config.threshold * 100,
+    format: (v) => `${Math.round(v)}`,
+    series: [{ name: "Measured", cls: "soil", points: soil, area: true }],
+    empty,
+  });
+  drawTraces("day-", src, { x, step: 6, now: live, gap: 1200, snap: 600, empty });
+
+  const summary = el("day-summary");
+  if (!src || !values.length) {
+    summary.innerHTML = "";
+    for (const [kind] of TRACE_SPECS.concat([["relay"]])) el(`day-now-${kind}`).textContent = "";
+    return;
+  }
+  const stepS = Object.values(data.days)[0].step_s || 300;
+  const thr = data.config.threshold * 100;
+  const below = values.filter((v) => v < thr).length * stepS * 1000;
+  let openings = 0;
+  src.relay.forEach((r, i) => { if (r && !(i && src.relay[i - 1])) openings++; });
+  const wet = src.rain.filter((r) => r > RAIN_WET_ABOVE).length * stepS * 1000;
+  const rows = [
+    ["Readings", `${values.length}`],
+    ["Soil", `${Math.round(Math.min(...values))} to ${Math.round(Math.max(...values))} %`],
+    ["Watered", openings ? (openings === 1 ? "once" : `${openings} times`) : "no"],
+    ["Below the level", below ? duration(below) : "never"],
+  ];
+  summary.innerHTML = rows.map(([k, v]) => `<li><span>${k}</span><b>${v}</b></li>`).join("");
+  el("day-now-soil-temp").textContent = range(columnPoints(src, "soil_temp_x100", 100), 1, " °C");
+  el("day-now-air-temp").textContent = range(columnPoints(src, "air_temp_x10", 10), 1, " °C");
+  el("day-now-humidity").textContent = range(columnPoints(src, "humidity_x10", 10), 0, " %");
+  el("day-now-light").textContent = range(columnPoints(src, "light"), 0, "");
+  el("day-now-rain").textContent = wet ? `Wet for ${duration(wet)}` : "Dry all day";
+  el("day-now-relay").textContent = openings ? `Open ${openings === 1 ? "once" : `${openings} times`}` : "Closed all day";
 }
 
 // Slider positions for each preset: moisture now, hours since watering, drying a day
@@ -507,6 +678,7 @@ function renderSettings() {
 
 function renderAll() {
   if (page === "dashboard") { renderHero(); renderTraces(); }
+  else if (page === "history") renderHistory();
   else if (page === "model") {
     renderCheck();
     renderSim();
@@ -526,7 +698,7 @@ function connect(password) {
     localStorage.setItem("broker-password", password);
     show(el("login"), false);
     show(el("app"), true);
-    client.subscribe(["state", "status", "forecast", "forecasts", "soil_hourly", "history", "config", "sim", "scores"]
+    client.subscribe(["state", "status", "forecast", "forecasts", "soil_hourly", "history", "config", "sim", "scores", "days/+"]
       .map((s) => `irrigation/${NODE}/${s}`));
     refreshStatus();
     renderAll();
@@ -535,7 +707,11 @@ function connect(password) {
   client.on("message", (topic, payload) => {
     const kind = topic.split("/").pop();
     const text = payload.toString();
-    if (kind === "status") {
+    if (topic.includes("/days/")) {
+      data.days[kind] = JSON.parse(text);
+      dayCache = null;
+      if (page === "history") renderHistory();
+    } else if (kind === "status") {
       nodeOnline = text === "online";
       if (!nodeOnline) relay.disabled = true;
     } else if (kind === "state") {
@@ -624,6 +800,10 @@ el("scenarios").addEventListener("click", (ev) => {
 for (const id of ["sim-now", "sim-watered", "sim-rate"]) el(id).addEventListener("input", () => simChanged(null));
 el("sim-hour").addEventListener("change", () => simChanged(null));
 
+el("day-pick").addEventListener("change", () => { dayChosen = Number(el("day-pick").value); renderHistory(); });
+el("day-prev").addEventListener("click", () => stepDay(1));
+el("day-next").addEventListener("click", () => stepDay(-1));
+
 el("menu").addEventListener("click", () => setSide(document.body.dataset.side !== "open", true));
 el("backdrop").addEventListener("click", () => setSide(false));
 narrow.addEventListener("change", initSide);
@@ -635,7 +815,7 @@ renderTrained();
 showSimOutputs();
 renderSim();
 setInterval(refreshStatus, 1000);
-setInterval(() => { if (data.history) renderAll(); }, 60000);
+setInterval(renderAll, 60000);
 
 const saved = localStorage.getItem("broker-password");
 if (saved) connect(saved); else show(el("login"), true);
