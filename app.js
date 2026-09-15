@@ -11,6 +11,7 @@ const MISSING = -32768;
 const DAY_S = 86400;
 const MIN_HERO_S = 4 * 3600;
 const MIN_TRACE_S = 3600;
+const RUN_GAP_S = 300;
 const PAGES = ["dashboard", "history", "model", "settings"];
 const DAY_COLUMNS = ["t", "soil", "rain", "light", "soil_temp_x100", "air_temp_x10", "humidity_x10", "relay"];
 const SIM_TIMEOUT_MS = 6000;
@@ -150,7 +151,20 @@ function columnPoints(src, field, scaleBy) {
   });
 }
 
-function historyPoints(field, scaleBy) { return columnPoints(data.history, field, scaleBy); }
+// The dashboard shows the current run only, the readings since the last gap in the
+// ring, so a reboot does not leave a broken line. Earlier runs are on History.
+function currentRun() {
+  const h = data.history;
+  if (!h || !h.t.length) return h;
+  let start = h.t.length - 1;
+  while (start > 0 && h.t[start] - h.t[start - 1] <= RUN_GAP_S) start--;
+  if (start === 0) return h;
+  const out = {};
+  for (const k of DAY_COLUMNS) out[k] = h[k].slice(start);
+  return out;
+}
+
+function historyPoints(field, scaleBy) { return columnPoints(currentRun(), field, scaleBy); }
 
 function clock(t) {
   return new Date(t * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -159,7 +173,8 @@ function clock(t) {
 // The live charts start at the first reading inside the last twelve hours, so a
 // node switched on an hour ago fills them instead of leaving most of the width empty
 function firstReading(t) {
-  const ts = data.history ? data.history.t : [];
+  const run = currentRun();
+  const ts = run ? run.t : [];
   const first = ts.find((v) => v >= t - LOOKBACK_S);
   return first === undefined ? t : first;
 }
@@ -421,7 +436,7 @@ function renderTraces() {
   renderSparks();
   const t = now();
   const x0 = windowStart(t, MIN_TRACE_S);
-  drawTraces("trace-", data.history, { x: [x0, t], step: tickStep(t - x0), gap: 900, snap: 600, empty: "Nothing yet" });
+  drawTraces("trace-", currentRun(), { x: [x0, t], step: tickStep(t - x0), gap: 900, snap: 600, empty: "Nothing yet" });
 }
 
 function localMidnight(t) {
