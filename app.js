@@ -133,7 +133,8 @@ function renderReadings(s) {
   relay.checked = !!s.relay;
   relay.disabled = false;
   el("relay-text").textContent = s.relay ? "Open" : "Closed";
-  el("signal").textContent = s.ssid ? `${s.ssid}, ${s.rssi} dBm` : `Signal ${s.rssi} dBm`;
+  if (s.link === "usb") el("signal").textContent = "USB, through a laptop";
+  else el("signal").textContent = s.ssid ? `${s.ssid}, ${s.rssi} dBm` : `Signal ${s.rssi} dBm`;
   const h = Math.floor(s.uptime_s / 3600);
   const m = Math.floor((s.uptime_s % 3600) / 60);
   el("uptime").textContent = h ? `Up ${h} h ${m} min` : `Up ${m} min`;

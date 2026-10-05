@@ -574,6 +574,7 @@ h3.spaced { margin-top: 18px; }
 .setting.wide { grid-column: 1 / -1; }
 .setting .label { font-size: 14.5px; }
 .setting .value { font-size: 14.5px; color: var(--quiet); }
+.usb-note { margin: 4px 0 0; font-size: 13.5px; color: var(--quiet); }
 .settings .sub { margin-top: 12px; }
 
 @media (max-width: 900px) {

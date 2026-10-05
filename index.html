@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=202609151546">
+<link rel="stylesheet" href="style.css?v=202610052130">
 </head>
 <body data-side="open" data-node="idle">
 
@@ -391,7 +391,16 @@
           <span class="label">The broker password is kept in this browser</span>
           <button id="forget" type="button" class="quiet-button">Forget password</button>
         </div>
+        <div class="setting wide">
+          <div>
+            <span class="label">USB link</span>
+            <p class="usb-note" id="usb-note">Not connected.</p>
+          </div>
+          <button id="usb-connect" type="button" class="quiet-button">Connect the node by USB</button>
+          <button id="usb-disconnect" type="button" class="quiet-button" hidden>Disconnect</button>
+        </div>
       </div>
+      <p class="sub">With no WiFi, plug the node into this computer and connect it here. Its readings then reach the broker through this page, so every open dashboard stays live. This works in Chrome or Edge on a computer, while this tab stays open.</p>
     </section>
   </section>
 
@@ -401,7 +410,8 @@
 <div id="tooltip" class="tooltip" hidden></div>
 
 <script src="https://cdn.jsdelivr.net/npm/mqtt@5.10.1/dist/mqtt.min.js"></script>
-<script src="charts.js?v=202609151546"></script>
-<script src="app.js?v=202609151546"></script>
+<script src="charts.js?v=202610052130"></script>
+<script src="app.js?v=202610052130"></script>
+<script src="usb.js?v=202610052130"></script>
 </body>
 </html>
