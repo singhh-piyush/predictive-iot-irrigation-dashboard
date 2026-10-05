@@ -17,6 +17,7 @@ function usbRefresh() {
   else if (usb.port && !usb.mode) text = "Port open, waiting for the node.";
   else if (usb.port && usb.mode === "wifi") text = "The node is on WiFi. The USB link is standing by.";
   else if (usb.port && !localStorage.getItem("broker-password")) text = "Sign in to the broker first. The page needs the password to publish for the node.";
+  else if (usb.port && usb.mode !== "usb") text = "Linking the node to the broker.";
   else if (usb.port) text = "Carrying the node's data to the broker. Keep this tab open.";
   el("usb-note").textContent = text;
 }
