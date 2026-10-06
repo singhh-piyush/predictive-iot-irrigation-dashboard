@@ -104,19 +104,21 @@ function pct(raw) {
 
 function now() { return Date.now() / 1000; }
 
-// Sidebar. On a wide screen it sits beside the content and the choice is kept,
-// on a narrow one it slides over the content and starts closed.
-const narrow = matchMedia("(max-width: 900px)");
+// Links in the top bar on a wide screen, a menu that drops down on a narrow one
+const narrow = matchMedia("(max-width: 760px)");
 
-function setSide(open, remember) {
-  document.body.dataset.side = open ? "open" : "closed";
+function setMenu(open) {
+  document.body.dataset.menu = open ? "open" : "closed";
   el("menu").setAttribute("aria-expanded", String(open));
-  if (remember && !narrow.matches) localStorage.setItem("sidebar", open ? "open" : "closed");
 }
 
-function initSide() {
-  if (narrow.matches) setSide(false);
-  else setSide(localStorage.getItem("sidebar") !== "closed");
+// the underline under the current page slides across to the new one
+function placeMark() {
+  const a = document.querySelector(".pages a[aria-current]");
+  if (!a || narrow.matches) return;
+  const mark = el("pages-mark");
+  mark.style.width = `${a.offsetWidth}px`;
+  mark.style.transform = `translateX(${a.offsetLeft}px)`;
 }
 
 function showPage(name) {
@@ -126,8 +128,8 @@ function showPage(name) {
   document.querySelectorAll(".pages a").forEach((a) => {
     if (a.dataset.page === name) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
   });
-  el("page-title").textContent = name[0].toUpperCase() + name.slice(1);
-  if (narrow.matches) setSide(false);
+  setMenu(false);
+  placeMark();
   window.scrollTo(0, 0);
   renderAll();
 }
@@ -238,21 +240,15 @@ function outlookSentence(f) {
   const thr = Math.round(f.threshold * 100);
   const nowPct = clampPct(f.levels[0]);
   const endPct = clampPct(f.levels[f.levels.length - 1]);
-  if (f.crossing === 0) {
-    return `The soil is already drier than the watering level: <b>${nowPct} %</b> now, watering starts at ${thr} %.`;
-  }
-  if (f.crossing === null) {
-    return `No watering needed in the next 24 hours. The model expects <b>${nowPct} %</b> now to become <b>${endPct} %</b> by then.`;
-  }
-  const due = f.decision === "irrigate" ? " That is within the lead time, so it is time to water." : "";
-  return `The soil should reach the watering level in about <b>${f.crossing.toFixed(1)} h</b>.${due}`;
+  if (f.crossing === 0) return `Below the watering level: <b>${nowPct} %</b>, waters at ${thr} %.`;
+  if (f.crossing === null) return `No water needed for 24 h. <b>${nowPct} %</b> now, <b>${endPct} %</b> by then.`;
+  const due = f.decision === "irrigate" ? " Within the lead time." : "";
+  return `Reaches the watering level in about <b>${f.crossing.toFixed(1)} h</b>.${due}`;
 }
 
 function notReady(f) {
-  if (f && f.reason === "no weather") {
-    return "The node has no weather for this hour, so the models cannot run. They need the Open-Meteo forecast from 72 hours back to 24 hours ahead, which the node fetches on WiFi or this page sends over USB.";
-  }
-  return "Waiting for the first hour of readings before the model can run.";
+  if (f && f.reason === "no weather") return "No weather for this hour yet, so the models cannot run.";
+  return "Waiting for the first hour of readings.";
 }
 
 function renderHero() {
@@ -266,8 +262,7 @@ function renderHero() {
   const x0 = windowStart(t, MIN_HERO_S);
   const first = firstReading(t);
   el("hero-sub").textContent = first > t - LOOKBACK_S + 300 && first < t - 60
-    ? `Measured since ${clock(first)}, next 24 hours predicted on the node`
-    : "Last 12 hours measured, next 24 predicted on the node";
+    ? `Since ${clock(first)}, next 24 h` : "Last 12 h, next 24 h";
 
   Charts.draw(el("soil-chart"), {
     x: [x0, t + AHEAD_S], y: [Math.floor(lo / 10) * 10, Math.ceil(hi / 10) * 10],
@@ -314,9 +309,7 @@ function forecastAge() {
   const f = data.forecast;
   if (!f || !f.ready) return;
   const since = Math.max(0, now() - f.at) * 1000;
-  el("provisional").textContent = since < 5000
-    ? `Computed on the node just now, at ${clock(f.at)}.`
-    : `Computed on the node ${ago(since)}, at ${clock(f.at)}.`;
+  el("provisional").textContent = since < 5000 ? "Updated just now" : `Updated ${ago(since)}`;
 }
 
 // at most once a second, so a burst of messages after a reconnect draws once
@@ -354,10 +347,10 @@ function renderWeather() {
   const hour = Math.floor(t / 3600) * 3600;
   if (w) {
     el("weather-title").textContent = `Weather in ${w.place}`;
-    const via = w.source === "usb" ? "sent down the USB link by a laptop" : "fetched by the node over WiFi";
     const age = t - w.fetched_at;
-    let text = `The Open-Meteo forecast the models read, ${via} ${ago(age * 1000)}.`;
-    if (age > WEATHER_STALE_S) text += " The node is working from its stored copy, which lasts three days from that fetch.";
+    let text = `Updated ${ago(age * 1000)}`;
+    if (w.source === "usb") text += " over USB";
+    if (age > WEATHER_STALE_S) text += ", using the stored copy";
     el("weather-sub").textContent = text;
     el("weather-sub").classList.toggle("warn-text", age > WEATHER_STALE_S);
   }
@@ -445,12 +438,12 @@ function renderInputs() {
     ["Clock", [
       inputRow("Durban time", durban, ""),
       inputRow("What the models are told", `${modelHour}, ${modelDay}`, ""),
-    ], "The models learned time of day and season at US stations. The node moves Durban's clock on by 8 hours and half a year, so the midday sun and the season sit where training saw them."],
+    ], "Moved on 8 h and half a year to match the US training clock"],
   ];
   box.innerHTML = groups.map(([title, rows, note]) =>
     `<div class="input-group"><h3>${title}</h3><ul class="horizons">${rows.join("")}</ul>${note ? `<p class="sub">${note}</p>` : ""}</div>`).join("");
   const count = Object.keys(v).length;
-  el("inputs-sub").textContent = `The ${count} numbers the node gave its five models at ${clock(f.at)}. The 2 hour model reads 44 of them, the 24 hour model all ${count}.`;
+  el("inputs-sub").textContent = `${count} inputs at ${clock(f.at)}`;
 
   if (!f.ready) {
     el("change-chart").innerHTML = "";
@@ -462,7 +455,7 @@ function renderInputs() {
     labels: f.hours.slice(1).map((h) => `${h} h`), values: changes, name: "Change",
     format: (x) => `${x > 0 ? "+" : x < 0 ? "\u2212" : ""}${Math.abs(x).toFixed(1)}`,
   });
-  el("inputs-decision").innerHTML = `${outlookSentence(f)} Watering level ${Math.round(f.threshold * 100)} %, lead time ${f.lead} h, so the node says <b>${f.decision === "irrigate" ? "water now" : "hold"}</b>.`;
+  el("inputs-decision").innerHTML = `${outlookSentence(f)} Decision: <b>${f.decision === "irrigate" ? "water now" : "hold"}</b>.`;
 }
 
 // Pair every logged forecast with what the hourly record later measured
@@ -502,7 +495,7 @@ function renderCheck() {
       { name: "Measured", cls: "soil", points: measured, dots: true },
       { name: "Predicted 2 h earlier", cls: "predicted", points: predicted, dots: true },
     ],
-    empty: "The first comparison appears two hours after the node's first full hour",
+    empty: "Nothing to check yet",
   });
 
   const body = el("skill-table").querySelector("tbody");
@@ -529,11 +522,11 @@ function renderCheck() {
   renderDays();
   const text = el("skill-text");
   if (!headline) {
-    text.textContent = "Every forecast is checked against what the probe measured later. Nothing is old enough to check yet.";
+    text.textContent = "Nothing old enough to check yet";
     return;
   }
-  const prov = headline.provisional ? " Made with less than a day of history." : "";
-  text.textContent = `Across ${headline.n} forecasts made two hours ahead, the model was off by ${headline.m.toFixed(1)} points on average. Assuming no change would have been off by ${headline.p.toFixed(1)}.${prov}`;
+  const prov = headline.provisional ? ", provisional" : "";
+  text.textContent = `2 h ahead: off by ${headline.m.toFixed(1)} pts, no change ${headline.p.toFixed(1)} (${headline.n} checked${prov})`;
 }
 
 function renderErrors(rows, t) {
@@ -547,7 +540,7 @@ function renderErrors(rows, t) {
       { name: "No change", cls: "persist", points: persist, dots: true },
       { name: "Model", cls: "predicted", points: model, dots: true },
     ],
-    empty: "The first checked forecast appears two hours after the first full hour",
+    empty: "Nothing to check yet",
   });
 }
 
@@ -557,7 +550,7 @@ function renderDays() {
   body.innerHTML = "";
   const days = (data.scores || []).slice().sort((a, b) => b.day - a.day);
   if (!days.length) {
-    body.innerHTML = `<tr><td colspan="5" class="none">The node writes a row here at the end of each checked hour</td></tr>`;
+    body.innerHTML = `<tr><td colspan="5" class="none">No days yet</td></tr>`;
     return;
   }
   for (const d of days) {
@@ -722,7 +715,7 @@ function renderHistory() {
   const x = [day, day + DAY_S];
   const live = t >= day && t < day + DAY_S ? t : undefined;
   const empty = dayChosen === null
-    ? "The node sends each day to the broker as it goes. The first one appears a few minutes after it starts."
+    ? "No days yet"
     : "Nothing recorded on this day";
   const soil = columnPoints(src, "soil").map(([ts, v]) => [ts, v === null ? null : pct(v)]);
   const values = soil.map((p) => p[1]).filter((v) => v !== null);
@@ -1119,12 +1112,14 @@ el("day-pick").addEventListener("change", () => { dayChosen = Number(el("day-pic
 el("day-prev").addEventListener("click", () => stepDay(1));
 el("day-next").addEventListener("click", () => stepDay(-1));
 
-el("menu").addEventListener("click", () => setSide(document.body.dataset.side !== "open", true));
-el("backdrop").addEventListener("click", () => setSide(false));
-narrow.addEventListener("change", initSide);
+el("menu").addEventListener("click", () => setMenu(document.body.dataset.menu !== "open"));
+el("backdrop").addEventListener("click", () => setMenu(false));
+document.addEventListener("keydown", (ev) => { if (ev.key === "Escape") setMenu(false); });
+narrow.addEventListener("change", () => { setMenu(false); placeMark(); });
+window.addEventListener("resize", placeMark);
+document.fonts.ready.then(placeMark);
 window.addEventListener("hashchange", () => showPage(location.hash.slice(1)));
 
-initSide();
 showPage(location.hash.slice(1));
 renderTrained();
 showSimOutputs();

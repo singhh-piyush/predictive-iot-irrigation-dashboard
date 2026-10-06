@@ -19,6 +19,21 @@ counts down while it waits, confirms when the water arrives and raises an alert 
 not, which suggests checking the tank, the pump and the tubing. How long to wait and how
 big a rise counts are under Settings, with a switch for a system notification as well.
 
+## Assistant
+
+The round button at the bottom right opens a chat. Ask it how the plant is doing, what the
+forecast means or how the model works, or tell it to water, close the valve or change a
+setting. Answers come with cards in the same style as the page: readings, the forecast
+chart, the weather, the model's inputs, how past forecasts did, a past day, and for a
+watering a countdown with a switch to stop it and the result of the watering check. It also
+posts on its own when a watering fails, when the forecast turns to water, when the node
+goes offline and when rain is on the way.
+
+It runs on gpt-oss-120b through Fireworks, called straight from the browser. Paste a
+Fireworks API key under Settings, Chat. The key is kept in that browser only and is never
+part of this repository. `chat.js` holds the panel, tools and cards, `knowledge.js` the
+project summary the model is given.
+
 ## Weather
 
 The models read Open-Meteo's hourly forecast for Durban, the same feed they were trained on.
@@ -44,4 +59,5 @@ dashboard, a phone included, stays live.
 - While the page carries the link it also fetches the node's weather every hour and sends
   it down the cable, since the node cannot download it without WiFi.
 
-Five files, no build step: `index.html`, `style.css`, `app.js`, `charts.js`, `usb.js`.
+Seven files, no build step: `index.html`, `style.css`, `app.js`, `charts.js`, `usb.js`,
+`chat.js`, `knowledge.js`.
