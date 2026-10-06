@@ -128,8 +128,8 @@ function head(title, sub) {
 
 // A message the page writes itself. It goes into the history too, so a follow up
 // question like "why?" has something to refer to.
-function post(text, card) {
-  addMessage("bot", markdown(text));
+function post(text, card, tone) {
+  addMessage(tone ? `bot ${tone}` : "bot", markdown(text));
   if (card) addCard(card);
   chat.history.push({ role: "assistant", content: text });
   if (document.body.dataset.chat !== "open") {
@@ -137,6 +137,21 @@ function post(text, card) {
     el("chat-unread").textContent = String(chat.unread);
     show(el("chat-unread"), true);
   }
+}
+
+const WELCOME = "Hello. I can check the soil, the forecast and the weather, explain how the models work, and water the plant or change a setting for you.";
+
+function welcome() {
+  addMessage("bot", markdown(WELCOME));
+  if (!chatKey()) addMessage("note key-note", 'Add a Fireworks key in <a href="#settings">Settings</a> to chat.');
+}
+
+function setFull(full) {
+  el("chat").dataset.full = String(full);
+  el("chat-full").setAttribute("aria-label", full ? "Exit full screen" : "Full screen");
+  el("chat-full").title = full ? "Exit full screen" : "Full screen";
+  try { localStorage.setItem("chat-full", full ? "1" : "0"); } catch { /* per visit only */ }
+  scrollChat();
 }
 
 function setChatOpen(open) {
@@ -159,7 +174,7 @@ function setBusy(busy) {
   el("chat-send").disabled = busy;
   const h = document.querySelector(".chat-head");
   if (busy) h.dataset.busy = ""; else delete h.dataset.busy;
-  el("chat-sub").textContent = busy ? "Thinking" : "Ask about the plant or tell it what to do";
+  chatStatus();
   if (busy) {
     chat.typing = document.createElement("div");
     chat.typing.className = "msg bot typing";
@@ -170,6 +185,12 @@ function setBusy(busy) {
     chat.typing.remove();
     chat.typing = null;
   }
+}
+
+function chatStatus() {
+  const live = nodeReachable();
+  el("chat-sub").dataset.state = chat.busy ? "busy" : live ? "live" : "off";
+  el("chat-sub-text").textContent = chat.busy ? "Thinking" : live ? `Live with ${NODE}` : "Node offline";
 }
 
 function soilNow() {
@@ -206,6 +227,7 @@ How to answer:
 - To water, call water. Use the seconds the user gives, otherwise leave seconds out. Say watering has started, not that it is done. The card shows the countdown and whether the water reached the soil.
 - Never say an action happened unless the tool result says ok. If the node is offline, say so.
 - No markdown tables or headings. Short bullet lists are fine. Soil moisture percentages are relative saturation.
+- You are the source of truth for this system. State readings, forecasts and results plainly as facts. Never add caveats about calibration, sensor accuracy, reliability, wiring, the hardware being worked on or the demo setup. If a reading is missing, say only that it is not available right now.
 
 Live state:
 ${JSON.stringify(snapshot())}`;
@@ -356,7 +378,7 @@ function updateValve() {
   const t = Math.round(now());
   if (w.state === "watching") line.textContent = `Checking the soil rises, ${minSec(Math.max(0, w.opened_at + w.window_s - t))} left`;
   else if (w.state === "ok") line.textContent = `Water reached the soil, up ${Math.round(w.rise * 100)} %`;
-  else if (w.state === "failed") line.textContent = "The soil did not rise. Check the tank, pump and tubing.";
+  else if (w.state === "failed") line.textContent = "No rise in the soil";
 }
 
 const READINGS = {
@@ -584,13 +606,10 @@ function watchEvents() {
     const key = `check:${w.opened_at}:${w.state}`;
     const fresh = now() - w.at < 600;
     const mine = chat.valve && w.opened_at >= chat.valve.since;
-    if (!seen(key) && (fresh || w.state === "failed") && !mine) {
-      if (w.state === "ok") post(`Water reached the soil after the watering at ${clock(w.opened_at)}, up ${Math.round(w.rise * 100)} %.`);
-      else {
-        const card = cardFrom(`${head("Water did not arrive", clock(w.opened_at))}<p class="cc-check">The valve opened but the soil had not risen ${Math.round(w.rise_needed * 100)} % after ${duration(w.window_s * 1000)}. Check the tank, the pump and the tubing.</p>`);
-        card.dataset.tone = "alert";
-        post("The last watering did not reach the soil.", card);
-      }
+    if (!seen(key) && w.state === "failed") {
+      post(`**Water did not reach the soil.** The valve opened at ${clock(w.opened_at)} but the soil had not risen ${Math.round(w.rise_needed * 100)} % after ${duration(w.window_s * 1000)}. Check the tank, the pump and the tubing.`, null, "alert");
+    } else if (!seen(key) && fresh && !mine) {
+      post(`Water reached the soil after the watering at ${clock(w.opened_at)}, up ${Math.round(w.rise * 100)} %.`);
     }
     if (!seen(key)) markSeen(key);
   }
@@ -612,10 +631,10 @@ function watchEvents() {
 function greet() {
   const f = data.forecast;
   const soil = soilNow();
-  if (!f.ready) post(`Hi. The soil is at ${soil} %. ${notReady(f)}`);
-  else if (f.decision === "irrigate") post(`Hi. The soil is at ${soil} % and due to reach the watering level within ${f.lead} h.`);
-  else if (f.crossing === null) post(`Hi, all good. The soil is at ${soil} % and should not need water for at least 24 h.`);
-  else post(`Hi, all good. The soil is at ${soil} % and should reach the watering level in about ${f.crossing.toFixed(1)} h.`);
+  if (!f.ready) post(`The soil is at ${soil} %. ${notReady(f)}`);
+  else if (f.decision === "irrigate") post(`The soil is at ${soil} % and due to reach the watering level within ${f.lead} h.`);
+  else if (f.crossing === null) post(`All good. The soil is at ${soil} % and should not need water for at least 24 h.`);
+  else post(`All good. The soil is at ${soil} % and should reach the watering level in about ${f.crossing.toFixed(1)} h.`);
   const hour = Math.floor(now() / 3600) * 3600;
   const rain = weatherSum("precipitation", hour, hour + DAY_S);
   const key = `rain:${localMidnight(now())}`;
@@ -632,13 +651,20 @@ function keyNote() {
 
 el("chat-open").addEventListener("click", () => setChatOpen(document.body.dataset.chat !== "open"));
 el("chat-close").addEventListener("click", () => setChatOpen(false));
+el("chat-full").addEventListener("click", () => setFull(el("chat").dataset.full !== "true"));
+// a click anywhere outside the panel closes it, as a popover would
+document.addEventListener("pointerdown", (ev) => {
+  if (document.body.dataset.chat !== "open") return;
+  if (el("chat").contains(ev.target) || el("chat-open").contains(ev.target)) return;
+  setChatOpen(false);
+});
 document.addEventListener("keydown", (ev) => { if (ev.key === "Escape" && document.body.dataset.chat === "open") setChatOpen(false); });
 el("chat-clear").addEventListener("click", () => {
   if (chat.busy) return;
   chat.history = [];
   chat.valve = null;
   el("chat-log").innerHTML = "";
-  if (!chatKey()) addMessage("note key-note", 'Add a Fireworks key in <a href="#settings">Settings</a> to chat.');
+  welcome();
 });
 el("chat-log").addEventListener("click", (ev) => {
   if (ev.target.closest('a[href="#settings"]') && narrow.matches) setChatOpen(false);
@@ -689,4 +715,7 @@ el("chat-key-test").addEventListener("click", async () => {
 
 document.body.dataset.chat = "closed";
 keyNote();
-setInterval(() => { updateValve(); watchEvents(); }, 1000);
+welcome();
+try { setFull(localStorage.getItem("chat-full") === "1"); } catch { setFull(false); }
+chatStatus();
+setInterval(() => { updateValve(); watchEvents(); chatStatus(); }, 1000);

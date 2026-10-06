@@ -104,21 +104,19 @@ function pct(raw) {
 
 function now() { return Date.now() / 1000; }
 
-// Links in the top bar on a wide screen, a menu that drops down on a narrow one
-const narrow = matchMedia("(max-width: 760px)");
+// Sidebar. On a wide screen it sits beside the content and the choice is kept,
+// on a narrow one it slides over the content and starts closed.
+const narrow = matchMedia("(max-width: 900px)");
 
-function setMenu(open) {
-  document.body.dataset.menu = open ? "open" : "closed";
+function setSide(open, remember) {
+  document.body.dataset.side = open ? "open" : "closed";
   el("menu").setAttribute("aria-expanded", String(open));
+  if (remember && !narrow.matches) localStorage.setItem("sidebar", open ? "open" : "closed");
 }
 
-// the underline under the current page slides across to the new one
-function placeMark() {
-  const a = document.querySelector(".pages a[aria-current]");
-  if (!a || narrow.matches) return;
-  const mark = el("pages-mark");
-  mark.style.width = `${a.offsetWidth}px`;
-  mark.style.transform = `translateX(${a.offsetLeft}px)`;
+function initSide() {
+  if (narrow.matches) setSide(false);
+  else setSide(localStorage.getItem("sidebar") !== "closed");
 }
 
 function showPage(name) {
@@ -128,8 +126,8 @@ function showPage(name) {
   document.querySelectorAll(".pages a").forEach((a) => {
     if (a.dataset.page === name) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
   });
-  setMenu(false);
-  placeMark();
+  el("page-title").textContent = name[0].toUpperCase() + name.slice(1);
+  if (narrow.matches) setSide(false);
   window.scrollTo(0, 0);
   renderAll();
 }
@@ -1112,14 +1110,13 @@ el("day-pick").addEventListener("change", () => { dayChosen = Number(el("day-pic
 el("day-prev").addEventListener("click", () => stepDay(1));
 el("day-next").addEventListener("click", () => stepDay(-1));
 
-el("menu").addEventListener("click", () => setMenu(document.body.dataset.menu !== "open"));
-el("backdrop").addEventListener("click", () => setMenu(false));
-document.addEventListener("keydown", (ev) => { if (ev.key === "Escape") setMenu(false); });
-narrow.addEventListener("change", () => { setMenu(false); placeMark(); });
-window.addEventListener("resize", placeMark);
-document.fonts.ready.then(placeMark);
+el("menu").addEventListener("click", () => setSide(document.body.dataset.side !== "open", true));
+el("backdrop").addEventListener("click", () => setSide(false));
+document.addEventListener("keydown", (ev) => { if (ev.key === "Escape" && narrow.matches) setSide(false); });
+narrow.addEventListener("change", initSide);
 window.addEventListener("hashchange", () => showPage(location.hash.slice(1)));
 
+initSide();
 showPage(location.hash.slice(1));
 renderTrained();
 showSimOutputs();

@@ -7,26 +7,32 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=202610062300">
+<link rel="stylesheet" href="style.css?v=202610070100">
 </head>
-<body data-menu="closed" data-node="idle">
+<body data-side="open" data-node="idle">
 
-<header class="topbar">
-  <div class="topbar-in">
-    <a class="brand" href="#dashboard"><span class="dot" aria-hidden="true"></span>Irrigation node</a>
-    <button id="menu" type="button" class="burger" aria-controls="pages" aria-expanded="false" aria-label="Menu"><i></i><i></i><i></i></button>
-    <nav class="pages" id="pages" aria-label="Pages">
-      <a href="#dashboard" data-page="dashboard">Dashboard</a>
-      <a href="#history" data-page="history">History</a>
-      <a href="#model" data-page="model">Model</a>
-      <a href="#settings" data-page="settings">Settings</a>
-      <span class="pages-mark" id="pages-mark" aria-hidden="true"></span>
-    </nav>
+<nav class="side" id="side" aria-label="Pages">
+  <div class="side-top">
+    <p class="brand">Irrigation node</p>
+    <p class="brand-sub">ESP32-S3 in the pot</p>
   </div>
-</header>
+  <ul class="pages">
+    <li><a href="#dashboard" data-page="dashboard">Dashboard</a></li>
+    <li><a href="#history" data-page="history">History</a></li>
+    <li><a href="#model" data-page="model">Model</a></li>
+    <li><a href="#settings" data-page="settings">Settings</a></li>
+  </ul>
+</nav>
 <div class="backdrop" id="backdrop"></div>
 
 <main>
+  <header class="pagehead">
+    <button id="menu" type="button" class="menu" aria-controls="side" aria-expanded="true">
+      <span class="bars" aria-hidden="true"><i></i><i></i><i></i></span>Menu
+    </button>
+    <h1 id="page-title">Dashboard</h1>
+    <span class="dot head-dot" aria-hidden="true"></span>
+  </header>
 
   <form id="login" class="card login" hidden>
     <p>Broker password to see the node.</p>
@@ -481,9 +487,13 @@
     <header class="chat-head">
       <span class="chat-avatar" aria-hidden="true"></span>
       <div class="chat-who">
-        <b>Assistant</b>
-        <span id="chat-sub">Ask about the plant or tell it what to do</span>
+        <b>Irrigation assistant</b>
+        <span id="chat-sub"><i class="chat-live" aria-hidden="true"></i><span id="chat-sub-text">Connecting</span></span>
       </div>
+      <button id="chat-full" type="button" class="icon-button" aria-label="Full screen" title="Full screen">
+        <svg class="full-in" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
+        <svg class="full-out" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/></svg>
+      </button>
       <button id="chat-clear" type="button" class="icon-button" aria-label="Start over" title="Start over">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12a8 8 0 1 0 2.4-5.7M4 4v4h4"/></svg>
       </button>
@@ -512,10 +522,10 @@
 <div id="tooltip" class="tooltip" hidden></div>
 
 <script src="https://cdn.jsdelivr.net/npm/mqtt@5.10.1/dist/mqtt.min.js"></script>
-<script src="charts.js?v=202610062300"></script>
-<script src="app.js?v=202610062300"></script>
+<script src="charts.js?v=202610070100"></script>
+<script src="app.js?v=202610070100"></script>
 <script src="usb.js?v=202610061800"></script>
-<script src="knowledge.js?v=202610062300"></script>
-<script src="chat.js?v=202610062300"></script>
+<script src="knowledge.js?v=202610070100"></script>
+<script src="chat.js?v=202610070100"></script>
 </body>
 </html>

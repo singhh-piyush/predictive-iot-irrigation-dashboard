@@ -27,7 +27,8 @@ setting. Answers come with cards in the same style as the page: readings, the fo
 chart, the weather, the model's inputs, how past forecasts did, a past day, and for a
 watering a countdown with a switch to stop it and the result of the watering check. It also
 posts on its own when a watering fails, when the forecast turns to water, when the node
-goes offline and when rain is on the way.
+goes offline and when rain is on the way. A failed watering shows as a red message. The
+panel can go full screen, and a click outside it closes it.
 
 It runs on gpt-oss-120b through Fireworks, called straight from the browser. Paste a
 Fireworks API key under Settings, Chat. The key is kept in that browser only and is never

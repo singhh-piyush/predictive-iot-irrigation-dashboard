@@ -60,7 +60,4 @@ Watering check: after every opening the node watches the soil. If the moisture r
 needed amount (3 % by default) the water arrived. If it has not risen within the wait (120 s
 by default) the check fails, which means the tank is empty, the pump failed, a tube came off
 or the emitter is blocked. Both numbers are in Settings.
-
-The demo is indoors, so the rain plate and the forecast rain do not reach the pot. The
-probe calibration is provisional until it is measured in the pot.
 `;
