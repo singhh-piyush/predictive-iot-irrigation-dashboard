@@ -115,15 +115,31 @@ function addCard(card) {
   return addNode(wrap);
 }
 
-function cardFrom(html, cls) {
+const ICONS = {
+  readings: "M4 18a8 8 0 1 1 16 0M12 14l3.5-3.5",
+  forecast: "M3 17l6-6 4 4 8-8M15 7h6v6",
+  weather: "M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M5.6 18.4L7 17M17 7l1.4-1.4M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7z",
+  model: "M7 7h10v10H7zM10 3v4M14 3v4M10 17v4M14 17v4M3 10h4M3 14h4M17 10h4M17 14h4",
+  accuracy: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z",
+  history: "M4 6h16v14H4zM4 10h16M8 3v4M16 3v4",
+  valve: "M12 3s6 7 6 11a6 6 0 0 1-12 0c0-4 6-11 6-11z",
+  setting: "M4 7h10M18 7h2M4 17h4M12 17h8M14 5v4M8 15v4",
+};
+
+function cardFrom(html, kind, cls) {
   const div = document.createElement("div");
   div.className = `cc ${cls || ""}`;
+  div.dataset.kind = kind;
   div.innerHTML = html;
   return div;
 }
 
-function head(title, sub) {
-  return `<div class="cc-head"><span class="cc-title">${esc(title)}</span><span class="cc-sub">${esc(sub || "")}</span></div>`;
+function icon(kind) {
+  return `<span class="cc-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="${ICONS[kind]}"/></svg></span>`;
+}
+
+function head(title, sub, kind) {
+  return `<div class="cc-head"><span class="cc-title">${icon(kind)}${esc(title)}</span><span class="cc-sub">${esc(sub || "")}</span></div>`;
 }
 
 // A message the page writes itself. It goes into the history too, so a follow up
@@ -327,11 +343,11 @@ function valveCard(seconds, open = true) {
   if (chat.valve) chat.valve.card.dataset.live = "false";
   const ring = 2 * Math.PI * 33;
   const card = cardFrom(`
-    ${head(seconds ? "Watering" : "Valve", seconds ? `${seconds} s from ${clock(now())}` : clock(now()))}
+    ${head(seconds ? "Watering" : "Valve", seconds ? `${seconds} s from ${clock(now())}` : clock(now()), "valve")}
     <div class="ring"><svg viewBox="0 0 78 78"><circle class="ring-bg" cx="39" cy="39" r="33"/><circle class="ring-fg" cx="39" cy="39" r="33" stroke-dasharray="${ring.toFixed(1)}" stroke-dashoffset="0"/></svg>
       <div class="ring-text"><b>${seconds || "–"}</b><small>${seconds ? "s left" : ""}</small></div></div>
     <label class="switch"><input type="checkbox" ${open ? "checked" : ""}><span class="track" aria-hidden="true"></span><span class="sw-text">${open ? "Opening" : "Closing"}</span></label>
-    <p class="cc-check"></p>`, "cc-valve");
+    <p class="cc-check"></p>`, "valve", "cc-valve");
   card.dataset.live = "true";
   const v = { card, seconds, ring, sentAt: Date.now(), since: now() - 2, wanted: open };
   card.querySelector("input").addEventListener("change", (ev) => {
@@ -400,7 +416,7 @@ function toolReadings(a) {
     result[k] = `${READINGS[k][6](s)} ${unit}`.trim();
     return `<div class="tile" data-kind="${kind}"><span class="tile-label">${label}</span><span class="tile-value"><b>${READINGS[k][6](s)}</b><small>${unit}</small></span><figure class="spark" data-key="${k}"></figure></div>`;
   });
-  const card = cardFrom(`${head("Readings", `at ${clock(s.t)}`)}<div class="tiles">${tiles.join("")}</div>`);
+  const card = cardFrom(`${head("Readings", `at ${clock(s.t)}`, "readings")}<div class="tiles">${tiles.join("")}</div>`, "readings");
   const t = now();
   card.querySelectorAll(".spark").forEach((fig) => {
     const [, , , field, scaleBy, asPct] = READINGS[fig.dataset.key];
@@ -433,10 +449,10 @@ function toolForecast() {
   if (!f || !f.ready) return { result: { ok: false, error: f ? notReady(f) : "No forecast from the node yet." } };
   const kpi = f.crossing === 0 ? "Now" : f.crossing === null ? "24<small>h +</small>" : `${f.crossing.toFixed(1)}<small>h</small>`;
   const water = f.decision === "irrigate";
-  const card = cardFrom(`${head("Soil forecast", `updated ${clock(f.at)}`)}
+  const card = cardFrom(`${head("Soil forecast", `updated ${clock(f.at)}`, "forecast")}
     <div class="kpi-line"><span class="kpi-value">${kpi}</span><span class="pill" data-state="${water ? "irrigate" : "hold"}">${water ? "Water now" : "Hold"}</span></div>
     <span class="cc-sub">until the watering level of ${Math.round(f.threshold * 100)} %</span>
-    <figure class="chart small"></figure>`, "cc-forecast");
+    <figure class="chart small"></figure>`, "forecast", "cc-forecast");
   forecastChart(card.querySelector("figure"));
   return {
     result: {
@@ -459,7 +475,7 @@ function toolWeather() {
     rain_last_24h_mm: weatherSum("precipitation", hour - DAY_S, hour), rain_next_24h_mm: weatherSum("precipitation", hour, hour + DAY_S),
   };
   for (const k of ["rain_last_24h_mm", "rain_next_24h_mm"]) if (result[k] !== null) result[k] = Math.round(result[k] * 10) / 10;
-  const card = cardFrom(`${head(`Weather in ${w.place}`, `updated ${ago((t - w.fetched_at) * 1000)}`)}
+  const card = cardFrom(`${head(`Weather in ${w.place}`, `updated ${ago((t - w.fetched_at) * 1000)}`, "weather")}
     <div class="weather-now">${[
       reading("Temperature", result.temperature_c, "°C", 1),
       reading("Humidity", result.humidity_pct, "%"),
@@ -467,7 +483,7 @@ function toolWeather() {
       reading("Sunlight", result.sunlight_wm2, "W/m²"),
       reading("Rain, past day", result.rain_last_24h_mm, "mm", 1),
       reading("Rain, next day", result.rain_next_24h_mm, "mm", 1),
-    ].join("")}</div><figure class="chart small" style="--accent: var(--air-temp)" data-title="Temperature, °C"></figure>`);
+    ].join("")}</div><figure class="chart small" style="--accent: var(--air-temp)" data-title="Temperature, °C"></figure>`, "weather");
   const points = weatherPoints("temperature_2m");
   const values = points.map((p) => p[1]).filter((v) => v !== null);
   const lo = values.length ? Math.min(...values) - 1 : 0, hi = values.length ? Math.max(...values) + 1 : 1;
@@ -491,9 +507,9 @@ function toolInputs() {
     ["Rain, last 24 h", `${num(v.om_precip_sum24, 1)} mm`],
     ["Rain forecast, next 24 h", `${num(v.fc_precipitation_sum_h24, 1)} mm`],
   ];
-  const card = cardFrom(`${head("What the models saw", `${Object.keys(v).length} inputs at ${clock(f.at)}`)}
+  const card = cardFrom(`${head("What the models saw", `${Object.keys(v).length} inputs at ${clock(f.at)}`, "model")}
     <ul class="horizons">${rows.map(([k, x]) => `<li><span>${k}</span><b>${x}</b></li>`).join("")}</ul>
-    <figure class="chart small"></figure>`);
+    <figure class="chart small"></figure>`, "model");
   const changes = f.ready ? f.levels.slice(1).map((level) => Math.round((level - f.levels[0]) * 1000) / 10) : [];
   if (f.ready) {
     Charts.bars(card.querySelector("figure"), {
@@ -516,10 +532,10 @@ function toolAccuracy() {
     return { h, n: use.length, model: m, none: p, skill: p > 0 ? 1 - (m * m) / (p * p) : 0 };
   });
   if (!rows.some((r) => r.n)) return { result: { ok: false, error: "No forecast is old enough to check yet." } };
-  const card = cardFrom(`${head("How the forecasts did", "last three days")}
+  const card = cardFrom(`${head("How the forecasts did", "last three days", "accuracy")}
     <table><thead><tr><th>Ahead</th><th>Checked</th><th>Model</th><th>No change</th><th>Skill</th></tr></thead><tbody>${rows.map((r) => (r.n
       ? `<tr><td>${r.h} h</td><td>${r.n}</td><td>${r.model.toFixed(1)}</td><td>${r.none.toFixed(1)}</td><td class="${r.skill < 0 ? "neg" : ""}">${r.skill.toFixed(2)}</td></tr>`
-      : `<tr><td>${r.h} h</td><td class="none" colspan="4">none yet</td></tr>`)).join("")}</tbody></table>`);
+      : `<tr><td>${r.h} h</td><td class="none" colspan="4">none yet</td></tr>`)).join("")}</tbody></table>`, "accuracy");
   const result = { ok: true, error_unit: "points of soil moisture" };
   for (const r of rows) result[`${r.h}h`] = r.n ? { checked: r.n, model_error: +r.model.toFixed(2), no_change_error: +r.none.toFixed(2), skill: +r.skill.toFixed(2) } : "none yet";
   return { result, card };
@@ -544,10 +560,10 @@ function toolHistory(a) {
     soil_min_pct: Math.round(Math.min(...soil)), soil_max_pct: Math.round(Math.max(...soil)),
     waterings: openings, time_below_watering_level: below ? duration(below) : "never",
   };
-  const card = cardFrom(`${head(dayLabel(day), `${soil.length} readings`)}<ul class="horizons">
+  const card = cardFrom(`${head(dayLabel(day), `${soil.length} readings`, "history")}<ul class="horizons">
     <li><span>Soil</span><b>${result.soil_min_pct} to ${result.soil_max_pct} %</b></li>
     <li><span>Watered</span><b>${openings ? (openings === 1 ? "once" : `${openings} times`) : "no"}</b></li>
-    <li><span>Below the watering level</span><b>${result.time_below_watering_level}</b></li></ul>`);
+    <li><span>Below the watering level</span><b>${result.time_below_watering_level}</b></li></ul>`, "history");
   return { result, card };
 }
 
@@ -569,7 +585,7 @@ function toolSetting(a) {
   }
   const before = data.config[a.name];
   publishConfig({ [a.name]: value });
-  const card = cardFrom(`<div class="cc-setting"><span>${spec.label}: ${esc(settingText(spec, before))} → <b>${esc(settingText(spec, value))}</b></span><button type="button" class="quiet-button">Undo</button></div>`);
+  const card = cardFrom(`<div class="cc-setting"><span class="cc-title">${icon("setting")}${spec.label}: ${esc(settingText(spec, before))} → <b>${esc(settingText(spec, value))}</b></span><button type="button" class="quiet-button">Undo</button></div>`, "setting");
   card.querySelector("button").addEventListener("click", (ev) => {
     publishConfig({ [a.name]: before });
     ev.target.disabled = true;
