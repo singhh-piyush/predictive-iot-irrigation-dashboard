@@ -11,6 +11,9 @@ const SEEN_STORE = "chat-seen";
 const VALVE_PENDING_MS = 4000;
 const OFFLINE_AFTER_MS = 30000;
 const RAIN_NOTE_MM = 2;
+// Questions like these always get a tool call first. Without it the model repeats an
+// earlier answer from the history and no card is drawn.
+const NEEDS_TOOL = /soil|moist|temp|humid|rain|wet|dry|light|sun|wind|weather|sensor|reading|forecast|predict|valve|water|accura|skill|yesterday|today|history|input|setting|level|threshold|lead|pulse|status|how is|how's/i;
 
 const chat = {
   history: [], busy: false, unread: 0, typing: null, valve: null,
@@ -124,6 +127,12 @@ const ICONS = {
   history: "M4 6h16v14H4zM4 10h16M8 3v4M16 3v4",
   valve: "M12 3s6 7 6 11a6 6 0 0 1-12 0c0-4 6-11 6-11z",
   setting: "M4 7h10M18 7h2M4 17h4M12 17h8M14 5v4M8 15v4",
+  soil: "M12 3s6 7 6 11a6 6 0 0 1-12 0c0-4 6-11 6-11z",
+  "soil-temp": "M10 4a2 2 0 0 1 4 0v10a4 4 0 1 1-4 0zM12 9v7",
+  "air-temp": "M10 4a2 2 0 0 1 4 0v10a4 4 0 1 1-4 0zM12 9v7",
+  humidity: "M8 4s4 5 4 8a4 4 0 0 1-8 0c0-3 4-8 4-8zM17 10s3 3.5 3 5.5a3 3 0 0 1-6 0c0-2 3-5.5 3-5.5z",
+  rain: "M7 15a4 4 0 0 1 .5-8 5 5 0 0 1 9.5 1.5A3.5 3.5 0 0 1 17 15zM9 18l-1 3M13 18l-1 3M17 18l-1 3",
+  light: "M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M5.6 18.4L7 17M17 7l1.4-1.4M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7z",
 };
 
 function cardFrom(html, kind, cls) {
@@ -279,7 +288,9 @@ async function send(text) {
   setBusy(true);
   try {
     for (let round = 0; round < CHAT_ROUNDS; round++) {
-      const m = await complete([{ role: "system", content: systemPrompt() }, ...trimmed()], { tools: TOOLS });
+      const force = round === 0 && NEEDS_TOOL.test(text);
+      const m = await complete([{ role: "system", content: systemPrompt() }, ...trimmed()],
+        { tools: TOOLS, tool_choice: force ? "required" : "auto" });
       const calls = m.tool_calls || [];
       const content = (m.content || "").trim();
       chat.history.push(calls.length ? { role: "assistant", content, tool_calls: calls } : { role: "assistant", content });
@@ -409,7 +420,9 @@ const READINGS = {
 function toolReadings(a) {
   const s = data.state;
   if (!s) return { result: { ok: false, error: "No readings from the node yet." } };
-  const keys = (Array.isArray(a.only) && a.only.filter((k) => READINGS[k]).length ? a.only.filter((k) => READINGS[k]) : Object.keys(READINGS));
+  const asked = Array.isArray(a.only) ? a.only.filter((k) => READINGS[k]) : [];
+  const keys = asked.length ? asked : Object.keys(READINGS);
+  if (keys.length === 1) return sensorCard(keys[0], s);
   const result = { ok: true, at: clock(s.t), node_online: nodeReachable() };
   const tiles = keys.map((k) => {
     const [label, unit, kind] = READINGS[k];
@@ -423,6 +436,41 @@ function toolReadings(a) {
     let points = historyPoints(field, scaleBy);
     if (asPct) points = points.map(([ts, v]) => [ts, v === null ? null : pct(v)]);
     Charts.spark(fig, points, { x: [windowStart(t, MIN_TRACE_S), t] });
+  });
+  return { result, card };
+}
+
+// One sensor on its own: the value large, its low and high since the run began, and its trace
+function sensorCard(k, s) {
+  const [label, unit, kind, field, scaleBy, asPct, value] = READINGS[k];
+  const digits = ["soil_temp", "air_temp"].includes(k) ? 1 : 0;
+  const t = now();
+  let points = historyPoints(field, scaleBy);
+  if (asPct) points = points.map(([ts, v]) => [ts, v === null ? null : pct(v)]);
+  const values = points.map((p) => p[1]).filter((v) => v !== null);
+  const result = { ok: true, at: clock(s.t), node_online: nodeReachable(), [k]: `${value(s)} ${unit}`.trim() };
+  let range = "";
+  if (values.length > 1 && k !== "rain") {
+    const lo = Math.min(...values), hi = Math.max(...values);
+    const span = duration((t - points[0][0]) * 1000);
+    result.low = `${lo.toFixed(digits)} ${unit}`.trim();
+    result.high = `${hi.toFixed(digits)} ${unit}`.trim();
+    range = `<div class="sensor-range"><span>Low <b>${lo.toFixed(digits)}</b></span><span>High <b>${hi.toFixed(digits)}</b></span><span>over ${esc(span)}</span></div>`;
+  }
+  const card = cardFrom(`${head(label, `at ${clock(s.t)}`, kind)}
+    <div class="sensor-now"><span class="kpi-value">${esc(value(s))}<small>${unit}</small></span></div>
+    ${range}<figure class="chart small" data-title="${esc(label)}"></figure>`, "sensor", "cc-sensor");
+  card.style.setProperty("--tone", `var(--${kind})`);
+  card.style.setProperty("--accent", `var(--${kind})`);
+  let lo = values.length ? Math.min(...values) : 0, hi = values.length ? Math.max(...values) : 1;
+  const padding = Math.max((hi - lo) * 0.2, digits ? 0.5 : 5);
+  lo -= padding; hi += padding;
+  if (!digits) lo = Math.max(0, lo);
+  if (asPct) { lo = Math.max(0, lo); hi = Math.min(100, Math.max(hi, lo + 10)); }
+  const x0 = windowStart(t, MIN_TRACE_S);
+  Charts.draw(card.querySelector("figure"), {
+    x: [x0, t], y: [lo, hi], step: tickStep(t - x0), now: t, small: true, gap: 900, snap: 600,
+    format: (v) => v.toFixed(digits), series: [{ name: label, cls: "accent", points, area: true }], empty: "Nothing yet",
   });
   return { result, card };
 }
