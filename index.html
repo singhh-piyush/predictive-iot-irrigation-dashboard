@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=202610052130">
+<link rel="stylesheet" href="style.css?v=202610061800">
 </head>
 <body data-side="open" data-node="idle">
 
@@ -113,6 +113,23 @@
       </p>
     </section>
 
+    <section class="card weather">
+      <div class="card-head">
+        <div>
+          <h2 id="weather-title">Weather</h2>
+          <p class="sub" id="weather-sub">The Open-Meteo forecast the models read. Waiting for the node.</p>
+        </div>
+        <span class="badge" id="weather-badge">Open-Meteo</span>
+      </div>
+      <div class="weather-now" id="weather-now"></div>
+      <div class="weather-charts">
+        <div><h3>Temperature, °C</h3><figure class="chart small" id="weather-temp" data-title="Temperature, °C"></figure></div>
+        <div><h3>Rain, mm an hour</h3><figure class="chart small" id="weather-rain" data-title="Rain, mm an hour"></figure></div>
+        <div><h3>Sunlight, W/m²</h3><figure class="chart small" id="weather-sun" data-title="Sunlight, W/m²"></figure></div>
+      </div>
+      <p class="sub">The day behind and the day ahead, the shaded side is forecast. The models were trained on this same feed at twelve US stations, so its numbers mean the same here as they did in training.</p>
+    </section>
+
     <div class="traces">
       <div class="card trace" data-kind="soil-temp">
         <div class="card-head"><h2>Soil temperature</h2><span class="now" id="now-soil-temp"></span></div>
@@ -206,6 +223,23 @@
   </section>
 
   <section class="page" data-page="model" hidden>
+    <section class="card inputs">
+      <div class="card-head">
+        <div>
+          <h2>What the model saw</h2>
+          <p class="sub" id="inputs-sub">The numbers the node gave its five models for the live forecast.</p>
+        </div>
+        <span class="badge" id="inputs-badge">On device</span>
+      </div>
+      <div class="input-groups" id="input-groups">
+        <p class="sub">Waiting for the node's forecast.</p>
+      </div>
+      <h3 class="spaced">What each model predicts</h3>
+      <p class="sub">One model per horizon, each giving the change in soil moisture from now in points. The trajectory on the dashboard joins them up.</p>
+      <figure class="chart" id="change-chart" aria-label="Predicted change in soil moisture at each horizon"></figure>
+      <p class="kpi-note" id="inputs-decision"></p>
+    </section>
+
     <section class="card scenario">
       <div class="card-head">
         <div>
@@ -410,8 +444,8 @@
 <div id="tooltip" class="tooltip" hidden></div>
 
 <script src="https://cdn.jsdelivr.net/npm/mqtt@5.10.1/dist/mqtt.min.js"></script>
-<script src="charts.js?v=202610052130"></script>
-<script src="app.js?v=202610052130"></script>
-<script src="usb.js?v=202610052215"></script>
+<script src="charts.js?v=202610061830"></script>
+<script src="app.js?v=202610061800"></script>
+<script src="usb.js?v=202610061800"></script>
 </body>
 </html>

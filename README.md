@@ -4,9 +4,16 @@ A single web page that shows a soil moisture node live. It connects straight to 
 broker from the browser over a secure WebSocket, so there is no server in between.
 
 Open the page, enter the broker password once, and the readings appear. Dashboard shows the
-sensors, the soil forecast and the valve. History shows any past day the node has logged.
-Model runs the on-board models on a chosen soil history and keeps score of past forecasts.
-Settings holds the watering rules.
+sensors, the soil forecast, the weather the models read and the valve. History shows any past
+day the node has logged. Model shows every input the node gave its models and what each one
+predicted, runs the on-board models on a chosen soil history and keeps score of past
+forecasts. Settings holds the watering rules.
+
+## Weather
+
+The models read Open-Meteo's hourly forecast for Durban, the same feed they were trained on.
+The node fetches it every hour on WiFi and publishes the day behind and the day ahead on
+`irrigation/node1/weather`, which the weather card draws.
 
 ## USB link
 
@@ -24,5 +31,7 @@ dashboard, a phone included, stays live.
 - On Linux the user needs to be in the group that owns the port, `uucp` on Arch and
   `dialout` on Debian and Ubuntu.
 - If the node is on WiFi it keeps its own connection and the link stands by.
+- While the page carries the link it also fetches the node's weather every hour and sends
+  it down the cable, since the node cannot download it without WiFi.
 
 Five files, no build step: `index.html`, `style.css`, `app.js`, `charts.js`, `usb.js`.

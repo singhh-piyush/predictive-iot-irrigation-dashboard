@@ -236,7 +236,8 @@ const Charts = (() => {
     const W = o.small ? NARROW : WIDE, H = o.small ? 150 : 200;
     const pad = o.small ? { top: 16, right: 8, bottom: 22, left: 34 } : { top: 22, right: 14, bottom: 26, left: 42 };
     const n = o.values.length;
-    const lo = Math.min(0, ...o.values), hi = Math.max(0, ...o.values);
+    // headroom both ways so a value label clears the axis labels below a negative bar
+    const lo = Math.min(0, ...o.values) * 1.25, hi = Math.max(0, ...o.values);
     const y = scale(lo, hi * 1.15 || 1, H - pad.bottom, pad.top);
     const slot = (W - pad.left - pad.right) / n;
     const bw = Math.min(slot * 0.5, o.small ? 28 : 48);

@@ -19,16 +19,19 @@ const SIM_TIMEOUT_MS = 6000;
 // skill against persistence per horizon from the training run, all stations pooled
 const TRAINED_SKILL = { labels: ["2 h", "4 h", "8 h", "16 h", "24 h"], values: [0.05, 0.08, 0.13, 0.20, 0.20] };
 
-// the indoor weather profile the node uses puts solar noon at 18:00 UTC, so
-// each time of day is expressed as an hour on that clock
-const TIME_OF_DAY = { morning: 12, midday: 18, evening: 0, night: 6 };
+// 08:00, 12:00, 18:00 and midnight in Durban, as UTC hours. The node looks up the
+// real weather for that hour and moves the calendar onto the training clock itself.
+const TIME_OF_DAY = { morning: 6, midday: 10, evening: 16, night: 22 };
+const SITE_ZONE = "Africa/Johannesburg";
+// past this the node is forecasting from its stored copy rather than a fresh one
+const WEATHER_STALE_S = 3 * 3600;
 
 const el = (id) => document.getElementById(id);
 const statusText = el("status-text");
 const relay = el("relay");
 
 const data = {
-  state: null, forecast: null, forecasts: [], hourly: { hours: [], raw: [] },
+  state: null, forecast: null, forecasts: [], weather: null, hourly: { hours: [], raw: [] },
   history: null, days: {}, scores: [], config: { auto: false, threshold: 0.3, lead: 2, pulse_s: 10, dry_raw: 4095, wet_raw: 2548 },
 };
 let client = null;
@@ -205,6 +208,13 @@ function outlookSentence(f) {
   return `The soil should reach the watering level in about <b>${f.crossing.toFixed(1)} h</b>.${due}`;
 }
 
+function notReady(f) {
+  if (f && f.reason === "no weather") {
+    return "The node has no weather for this hour, so the models cannot run. They need the Open-Meteo forecast from 72 hours back to 24 hours ahead, which the node fetches on WiFi or this page sends over USB.";
+  }
+  return "Waiting for the first hour of readings before the model can run.";
+}
+
 function renderHero() {
   const t = now();
   const f = data.forecast;
@@ -236,7 +246,7 @@ function renderHero() {
   const kpi = el("kpi-hours");
   const pill = el("decision");
   if (!f || !f.ready) {
-    line.textContent = "Waiting for the first hour of readings before the model can run.";
+    line.textContent = notReady(f);
     kpi.textContent = "–";
     pill.textContent = "Waiting";
     pill.dataset.state = "waiting";
@@ -257,6 +267,144 @@ function renderHero() {
   show(horizons, true);
   prov.textContent = `Computed on the node at ${clock(f.at)}.`;
   show(prov, true);
+}
+
+function weatherPoints(name) {
+  const w = data.weather;
+  return w ? w.hourly.time.map((t, i) => [t, w.hourly[name][i]]) : [];
+}
+
+// Open-Meteo stamps an hour's rain at its end, so hours after "from" up to "to"
+function weatherSum(name, from, to) {
+  const values = weatherPoints(name).filter(([t, v]) => t > from && t <= to && v !== null).map((p) => p[1]);
+  return values.length ? values.reduce((a, b) => a + b, 0) : null;
+}
+
+function weatherAt(name, t) {
+  const p = weatherPoints(name).find((q) => q[0] === t);
+  return p ? p[1] : null;
+}
+
+function reading(label, value, unit, digits = 0) {
+  const text = value === null || value === undefined ? "–" : Number(value).toFixed(digits);
+  return `<div class="wx"><span class="tile-label">${label}</span><span class="tile-value"><b>${text}</b><small>${unit}</small></span></div>`;
+}
+
+function renderWeather() {
+  const w = data.weather;
+  const t = now();
+  const hour = Math.floor(t / 3600) * 3600;
+  if (w) {
+    el("weather-title").textContent = `Weather in ${w.place}`;
+    const via = w.source === "usb" ? "sent down the USB link by a laptop" : "fetched by the node over WiFi";
+    const age = t - w.fetched_at;
+    let text = `The Open-Meteo forecast the models read, ${via} ${ago(age * 1000)}.`;
+    if (age > WEATHER_STALE_S) text += " The node is working from its stored copy, which lasts three days from that fetch.";
+    el("weather-sub").textContent = text;
+    el("weather-sub").classList.toggle("warn-text", age > WEATHER_STALE_S);
+  }
+  el("weather-now").innerHTML = [
+    reading("Temperature", weatherAt("temperature_2m", hour), "°C", 1),
+    reading("Humidity", weatherAt("relative_humidity_2m", hour), "%"),
+    reading("Wind", weatherAt("wind_speed_10m", hour), "km/h", 1),
+    reading("Sunlight", weatherAt("shortwave_radiation", hour), "W/m²"),
+    reading("Rain, last 24 h", weatherSum("precipitation", hour - DAY_S, hour), "mm", 1),
+    reading("Rain, next 24 h", weatherSum("precipitation", hour, hour + DAY_S), "mm", 1),
+  ].join("");
+  const charts = [["weather-temp", "temperature_2m", 1, false], ["weather-rain", "precipitation", 1, true], ["weather-sun", "shortwave_radiation", 0, true]];
+  for (const [id, name, digits, fromZero] of charts) {
+    const points = weatherPoints(name);
+    const values = points.map((p) => p[1]).filter((v) => v !== null);
+    let lo = values.length ? Math.min(...values) : 0;
+    let hi = values.length ? Math.max(...values) : 1;
+    const padding = Math.max((hi - lo) * 0.15, digits ? 0.5 : 5);
+    lo = fromZero ? 0 : lo - padding;
+    hi += padding;
+    // a dry day would otherwise stretch a trace of drizzle to the top of the chart
+    if (name === "precipitation") hi = Math.max(hi, 1);
+    const figure = el(id);
+    Charts.draw(figure, {
+      x: [hour - DAY_S, hour + DAY_S], y: [lo, hi], step: 12, now: t, shadeFrom: t, small: true,
+      gap: 3600, snap: 1800, format: (v) => v.toFixed(digits),
+      series: [{ name: figure.dataset.title.split(",")[0], cls: "accent", points, area: fromZero }],
+      empty: "Waiting for the node's weather",
+    });
+  }
+}
+
+function signedPoints(v) {
+  if (v === null || v === undefined) return "–";
+  const p = v * 100;
+  return `${p >= 0 ? "+" : "\u2212"}${Math.abs(p).toFixed(1)}`;
+}
+
+function inputRow(label, text, unit) {
+  return `<li><span>${label}</span><b>${text}${text === "–" ? "" : unit}</b></li>`;
+}
+
+function num(v, digits) { return v === null || v === undefined ? "–" : Number(v).toFixed(digits); }
+
+function renderInputs() {
+  const f = data.forecast;
+  const box = el("input-groups");
+  if (!f || !f.inputs) {
+    box.innerHTML = `<p class="sub">${f ? notReady(f) : "Waiting for the node's forecast."}</p>`;
+    el("change-chart").innerHTML = "";
+    el("inputs-decision").textContent = "";
+    return;
+  }
+  const v = f.inputs;
+  const durban = new Date(f.t * 1000).toLocaleString([], { timeZone: SITE_ZONE, weekday: "short", hour: "2-digit", minute: "2-digit" });
+  const model = new Date(f.clock * 1000);
+  const modelHour = model.toLocaleTimeString([], { timeZone: "UTC", hour: "2-digit", minute: "2-digit" });
+  const modelDay = model.toLocaleDateString([], { timeZone: "UTC", day: "numeric", month: "long" });
+  const groups = [
+    ["Soil, from the probe", [
+      inputRow("Moisture now", num(v.theta_rel_5 * 100, 0), " %"),
+      inputRow("Change over the last hour", signedPoints(v.theta_rel_5_diff1), " pts"),
+      inputRow("over 3 hours", signedPoints(v.theta_rel_5_diff3), " pts"),
+      inputRow("over 6 hours", signedPoints(v.theta_rel_5_diff6), " pts"),
+      inputRow("over 24 hours", signedPoints(v.theta_rel_5_diff24), " pts"),
+    ]],
+    ["Weather so far", [
+      inputRow("Temperature", num(v.om_temperature_2m, 1), " °C"),
+      inputRow("Humidity", num(v.om_relative_humidity_2m, 0), " %"),
+      inputRow("Wind", num(v.om_wind_speed_10m, 1), " km/h"),
+      inputRow("Sunlight", num(v.om_shortwave_radiation, 0), " W/m²"),
+      inputRow("Rain, last 3 hours", num(v.om_precip_sum3, 1), " mm"),
+      inputRow("Rain, last 24 hours", num(v.om_precip_sum24, 1), " mm"),
+      inputRow("Rain, last 3 days", num(v.om_precip_sum72, 1), " mm"),
+      inputRow("Mean temperature, last 24 hours", num(v.om_temperature_mean24, 1), " °C"),
+    ]],
+    ["Weather ahead, forecast", [
+      inputRow("Rain, next 2 hours", num(v.fc_precipitation_sum_h2, 1), " mm"),
+      inputRow("Rain, next 8 hours", num(v.fc_precipitation_sum_h8, 1), " mm"),
+      inputRow("Rain, next 24 hours", num(v.fc_precipitation_sum_h24, 1), " mm"),
+      inputRow("Sunlight, next 24 hours", num(v.fc_shortwave_radiation_sum_h24 / 1000, 1), " kWh/m²"),
+      inputRow("Mean temperature, next 24 hours", num(v.fc_temperature_2m_mean_h24, 1), " °C"),
+      inputRow("Mean humidity, next 24 hours", num(v.fc_relative_humidity_2m_mean_h24, 0), " %"),
+    ]],
+    ["Clock", [
+      inputRow("Durban time", durban, ""),
+      inputRow("What the models are told", `${modelHour}, ${modelDay}`, ""),
+    ], "The models learned time of day and season at US stations. The node moves Durban's clock on by 8 hours and half a year, so the midday sun and the season sit where training saw them."],
+  ];
+  box.innerHTML = groups.map(([title, rows, note]) =>
+    `<div class="input-group"><h3>${title}</h3><ul class="horizons">${rows.join("")}</ul>${note ? `<p class="sub">${note}</p>` : ""}</div>`).join("");
+  const count = Object.keys(v).length;
+  el("inputs-sub").textContent = `The ${count} numbers the node gave its five models at ${clock(f.at)}. The 2 hour model reads 44 of them, the 24 hour model all ${count}.`;
+
+  if (!f.ready) {
+    el("change-chart").innerHTML = "";
+    el("inputs-decision").textContent = notReady(f);
+    return;
+  }
+  const changes = f.levels.slice(1).map((level) => Math.round((level - f.levels[0]) * 1000) / 10);
+  Charts.bars(el("change-chart"), {
+    labels: f.hours.slice(1).map((h) => `${h} h`), values: changes, name: "Change",
+    format: (x) => `${x > 0 ? "+" : x < 0 ? "\u2212" : ""}${Math.abs(x).toFixed(1)}`,
+  });
+  el("inputs-decision").innerHTML = `${outlookSentence(f)} Watering level ${Math.round(f.threshold * 100)} %, lead time ${f.lead} h, so the node says <b>${f.decision === "irrigate" ? "water now" : "hold"}</b>.`;
 }
 
 // Pair every logged forecast with what the hourly record later measured
@@ -693,9 +841,10 @@ function renderSettings() {
 }
 
 function renderAll() {
-  if (page === "dashboard") { renderHero(); renderTraces(); }
+  if (page === "dashboard") { renderHero(); renderWeather(); renderTraces(); }
   else if (page === "history") renderHistory();
   else if (page === "model") {
+    renderInputs();
     renderCheck();
     renderSim();
     if (!sim.sent && nodeReachable()) simChanged(null);
@@ -714,7 +863,7 @@ function connect(password) {
     localStorage.setItem("broker-password", password);
     show(el("login"), false);
     show(el("app"), true);
-    client.subscribe(["state", "status", "forecast", "forecasts", "soil_hourly", "history", "config", "sim", "scores", "days/+"]
+    client.subscribe(["state", "status", "forecast", "forecasts", "soil_hourly", "history", "config", "sim", "scores", "weather", "days/+"]
       .map((s) => `irrigation/${NODE}/${s}`));
     refreshStatus();
     renderAll();
@@ -743,6 +892,10 @@ function connect(password) {
     } else if (kind === "forecast") {
       data.forecast = JSON.parse(text);
       renderHero();
+      if (page === "model") renderInputs();
+    } else if (kind === "weather") {
+      data.weather = JSON.parse(text);
+      if (page === "dashboard") renderWeather();
     } else if (kind === "forecasts") {
       data.forecasts = JSON.parse(text).items || [];
       if (page === "model") renderCheck();

@@ -6,8 +6,15 @@
 const usb = {
   port: null, reader: null, writer: null, piped: null,
   mode: null, bridge: null, subs: new Set(), queue: Promise.resolve(), note: "Not connected.",
+  weatherAt: 0, weatherTry: 0,
 };
 const NODE_TOPICS = `irrigation/${NODE}/`;
+// the request the node makes itself, see weather.h in the firmware
+const WEATHER_URL = "https://api.open-meteo.com/v1/forecast?latitude=-29.86&longitude=31.03"
+  + "&hourly=temperature_2m,relative_humidity_2m,precipitation,shortwave_radiation,wind_speed_10m"
+  + "&timezone=UTC&timeformat=unixtime&past_days=3&forecast_days=4";
+const WEATHER_EVERY_MS = 3600 * 1000;
+const WEATHER_RETRY_MS = 5 * 60 * 1000;
 
 function usbRefresh() {
   el("usb-connect").hidden = !!usb.port;
@@ -29,6 +36,24 @@ function usbSend(line) {
 }
 
 function usbHi() { usbSend(`@@hi ${Math.floor(Date.now() / 1000)}`); }
+
+// Without WiFi the node cannot download its weather, so while this page carries the
+// link it fetches the same response and sends it down the cable
+async function usbWeather() {
+  const t = Date.now();
+  if (t - usb.weatherAt < WEATHER_EVERY_MS || t - usb.weatherTry < WEATHER_RETRY_MS) return;
+  usb.weatherTry = t;
+  try {
+    const r = await fetch(WEATHER_URL);
+    if (!r.ok) return;
+    const body = await r.json();
+    body.fetched_at = Math.floor(Date.now() / 1000);
+    usbSend(`@@msg ${NODE_TOPICS}weather_set ${JSON.stringify(body)}`);
+    usb.weatherAt = Date.now();
+  } catch (err) {
+    // offline as well, the node keeps its stored copy
+  }
+}
 
 // The page's own client carries a last will, so closing the tab or losing the
 // laptop's connection marks the node offline the way its own session would
@@ -73,6 +98,7 @@ function usbLine(line) {
     } else {
       openBridge();
       if (usb.bridge && usb.bridge.connected) usbHi();
+      if (rest === "usb") usbWeather();
     }
   } else if (kind === "pub") {
     const a = rest.indexOf(" ");
@@ -123,6 +149,7 @@ async function usbStart(port) {
   }
   usb.port = port;
   usb.mode = null;
+  usb.weatherAt = usb.weatherTry = 0;
   usb.writer = port.writable.getWriter();
   usbRefresh();
   usbRead(port);
