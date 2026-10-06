@@ -18,6 +18,11 @@ const SIM_TIMEOUT_MS = 6000;
 // the node sends a reading a second, the history ring keeps one every two minutes
 const LIVE_KEEP = 900;
 const REDRAW_MS = 1000;
+// how long a passed watering check stays on screen, and how far past its deadline a
+// check can still be waiting before it must have been cut off by a restart
+const CHECK_OK_SHOW_S = 60;
+const CHECK_SLACK_S = 30;
+const TITLE = document.title;
 
 // skill against persistence per horizon from the training run, all stations pooled
 const TRAINED_SKILL = { labels: ["2 h", "4 h", "8 h", "16 h", "24 h"], values: [0.05, 0.08, 0.13, 0.20, 0.20] };
@@ -35,7 +40,8 @@ const relay = el("relay");
 
 const data = {
   state: null, forecast: null, forecasts: [], weather: null, hourly: { hours: [], raw: [] },
-  history: null, live: [], days: {}, scores: [], config: { auto: false, threshold: 0.3, lead: 2, pulse_s: 10, dry_raw: 4095, wet_raw: 2548 },
+  history: null, live: [], days: {}, scores: [], config: { auto: false, threshold: 0.3, lead: 2, pulse_s: 10, dry_raw: 4095, wet_raw: 2548, check_s: 120, check_rise: 0.03 },
+  watering: null,
 };
 let client = null;
 let lastMessage = 0;
@@ -71,6 +77,7 @@ function nodeReachable() {
 function refreshStatus() {
   if (!client || !client.connected) return;
   forecastAge();
+  renderWatering();
   if (!lastMessage) {
     setStatus("idle", nodeOnline ? "Node online, waiting for readings" : "Waiting for the node");
   } else {
@@ -879,6 +886,59 @@ function renderTrained() {
   Charts.bars(el("skill-chart"), { ...TRAINED_SKILL, name: "Skill", small: true, format: (v) => v.toFixed(2) });
 }
 
+function minSec(s) {
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+
+function checkDismissed(w) {
+  return localStorage.getItem("check-dismissed") === String(w.opened_at);
+}
+
+function renderWatering() {
+  const w = data.watering;
+  const notice = el("notice");
+  const line = el("check-line");
+  let state = w ? w.state : "";
+  let text = "";
+  let short = "";
+  let showNotice = false;
+  if (w) {
+    const t = Math.round(now());
+    const deadline = w.opened_at + w.window_s;
+    const rise = Math.round(w.rise * 100);
+    if (state === "watching" && t > deadline + CHECK_SLACK_S) {
+      state = "stale";
+      short = "The last check did not finish, the node restarted during it";
+    } else if (state === "watching") {
+      text = `Watering. Watching for the soil to rise by ${Math.round(w.rise_needed * 100)} %, ${minSec(Math.max(0, deadline - t))} left.`;
+      short = "Checking that the water arrives";
+      showNotice = true;
+    } else if (state === "ok") {
+      text = `Water reached the soil, up ${rise} % in ${duration((w.at - w.opened_at) * 1000)}.`;
+      short = `Water reached the soil, up ${rise} %`;
+      showNotice = t - w.at < CHECK_OK_SHOW_S;
+    } else if (state === "failed") {
+      text = `The valve opened at ${clock(w.opened_at)} but the soil had not risen after ${duration(w.window_s * 1000)}. Check the tank, the pump and the tubing.`;
+      short = `No rise in the soil after the watering at ${clock(w.opened_at)}`;
+      showNotice = !checkDismissed(w);
+    }
+  }
+  line.textContent = short;
+  line.dataset.state = state;
+  notice.dataset.state = state;
+  el("notice-text").textContent = text;
+  show(notice, showNotice);
+  document.title = state === "failed" && showNotice ? `(!) ${TITLE}` : TITLE;
+}
+
+function notifyFailed(w) {
+  if (localStorage.getItem("notify") !== "1" || !("Notification" in window) || Notification.permission !== "granted") return;
+  new Notification("Water did not reach the soil", {
+    body: `The valve opened at ${clock(w.opened_at)} but the soil had not risen after ${duration(w.window_s * 1000)}.`,
+    tag: `check-${w.opened_at}`,
+  });
+}
+
 function renderSettings() {
   const c = data.config;
   const set = (id, v) => { const input = el(id); if (document.activeElement !== input) input.value = v; };
@@ -889,6 +949,11 @@ function renderSettings() {
   set("pulse", c.pulse_s);
   set("dry", c.dry_raw);
   set("wet", c.wet_raw);
+  set("check-s", c.check_s);
+  set("check-rise", Math.round(c.check_rise * 100));
+  const notify = localStorage.getItem("notify") === "1";
+  el("notify").checked = notify;
+  el("notify-text").textContent = notify ? "On" : "Off";
 }
 
 function renderAll() {
@@ -914,7 +979,7 @@ function connect(password) {
     localStorage.setItem("broker-password", password);
     show(el("login"), false);
     show(el("app"), true);
-    client.subscribe(["state", "status", "forecast", "forecasts", "soil_hourly", "history", "config", "sim", "scores", "weather", "days/+"]
+    client.subscribe(["state", "status", "forecast", "forecasts", "soil_hourly", "history", "config", "sim", "scores", "weather", "watering", "days/+"]
       .map((s) => `irrigation/${NODE}/${s}`));
     refreshStatus();
     renderAll();
@@ -967,6 +1032,14 @@ function connect(password) {
       renderSettings();
       if (data.state) renderReadings(data.state);
       renderAll();
+    } else if (kind === "watering") {
+      const before = data.watering;
+      data.watering = JSON.parse(text);
+      // only a check seen running fires a notification, never the retained copy at load
+      if (data.watering.state === "failed" && before && before.state === "watching" && before.opened_at === data.watering.opened_at) {
+        notifyFailed(data.watering);
+      }
+      renderWatering();
     } else if (kind === "sim") {
       const r = JSON.parse(text);
       if (r.id === sim.id) { sim.result = r; renderSim(); }
@@ -1013,6 +1086,22 @@ el("lead").addEventListener("change", () => publishConfig({ lead: Number(el("lea
 el("pulse").addEventListener("change", () => publishConfig({ pulse_s: Number(el("pulse").value) }));
 el("dry").addEventListener("change", () => publishConfig({ dry_raw: Number(el("dry").value) }));
 el("wet").addEventListener("change", () => publishConfig({ wet_raw: Number(el("wet").value) }));
+el("check-s").addEventListener("change", () => publishConfig({ check_s: Number(el("check-s").value) }));
+el("check-rise").addEventListener("change", () => publishConfig({ check_rise: Number(el("check-rise").value) / 100 }));
+
+el("notify").addEventListener("change", async () => {
+  const wanted = el("notify").checked;
+  let on = wanted && "Notification" in window;
+  if (on && Notification.permission !== "granted") on = (await Notification.requestPermission()) === "granted";
+  localStorage.setItem("notify", on ? "1" : "0");
+  renderSettings();
+  if (wanted && !on) el("notify-text").textContent = "Blocked by the browser";
+});
+
+el("notice-dismiss").addEventListener("click", () => {
+  if (data.watering) localStorage.setItem("check-dismissed", String(data.watering.opened_at));
+  renderWatering();
+});
 
 el("forget").addEventListener("click", () => {
   localStorage.removeItem("broker-password");

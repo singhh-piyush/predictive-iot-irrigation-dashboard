@@ -17,6 +17,9 @@
   --good: #1f8a4c;
   --warn: #b8741a;
   --warn-pale: #fbf3e6;
+  --good-pale: #e8f5ed;
+  --alert: #b42318;
+  --alert-pale: #fdeceb;
   --side: 210px;
 }
 
@@ -474,6 +477,28 @@ td.neg { color: var(--warn); }
 .valve-card .sub { margin-top: 12px; }
 .watered { display: flex; flex-direction: column; gap: 4px; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--rule); }
 .watered b { font-size: 18px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.check-line { font-size: 13.5px; color: var(--quiet); }
+.check-line[data-state="failed"] { color: var(--alert); }
+.check-line[data-state="ok"] { color: var(--good); }
+
+.notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 20px;
+  padding: 12px 16px;
+  margin-bottom: 14px;
+  font-size: 14.5px;
+  background: var(--card);
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+}
+.notice p { margin: 0; }
+.notice[data-state="ok"] { background: var(--good-pale); border-color: var(--good); }
+.notice[data-state="failed"] { background: var(--alert-pale); border-color: var(--alert); color: var(--alert); }
+.notice[data-state="failed"] p { font-weight: 500; }
+.notice:not([data-state="failed"]) button { display: none; }
 
 .switch { display: flex; align-items: center; gap: 12px; cursor: pointer; font-size: 15px; flex: none; }
 .switch.big { margin-top: 14px; font-size: 18px; }

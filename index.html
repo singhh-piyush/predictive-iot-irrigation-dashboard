@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=202610061900">
+<link rel="stylesheet" href="style.css?v=202610062000">
 </head>
 <body data-side="open" data-node="idle">
 
@@ -45,6 +45,11 @@
   </form>
 
   <div id="app" hidden>
+
+  <div class="notice" id="notice" role="status" hidden>
+    <p id="notice-text"></p>
+    <button id="notice-dismiss" type="button" class="quiet-button">Dismiss</button>
+  </div>
 
   <section class="page" data-page="dashboard">
     <div class="strip">
@@ -162,6 +167,7 @@
         <div class="watered">
           <span class="tile-label">Last watered</span>
           <b id="last-watered">–</b>
+          <span class="check-line" id="check-line"></span>
         </div>
       </div>
     </div>
@@ -402,6 +408,27 @@
     </section>
 
     <section class="card settings">
+      <div class="card-head"><div><h2>Watering check</h2><p class="sub">After every opening the node watches for the soil to rise. If it has not risen in time, the water did not arrive.</p></div></div>
+      <div class="settings-grid">
+        <div class="setting">
+          <span class="label">Time for the soil to respond, seconds</span>
+          <input id="check-s" class="number" type="number" min="10" max="1800" step="5">
+        </div>
+        <div class="setting">
+          <span class="label">Rise that counts as watered, % soil moisture</span>
+          <input id="check-rise" class="number" type="number" min="1" max="50" step="1">
+        </div>
+        <div class="setting wide">
+          <span class="label">Also show a system notification on this computer when water does not arrive</span>
+          <label class="switch">
+            <input id="notify" type="checkbox">
+            <span class="track" aria-hidden="true"></span>
+            <span id="notify-text">Off</span>
+          </label>
+        </div>
+      </div>
+    </section>
+    <section class="card settings">
       <div class="card-head"><div><h2>Probe</h2><p class="sub">Soil moisture is shown as a percentage between these two raw readings</p></div></div>
       <div class="settings-grid">
         <div class="setting">
@@ -444,8 +471,8 @@
 <div id="tooltip" class="tooltip" hidden></div>
 
 <script src="https://cdn.jsdelivr.net/npm/mqtt@5.10.1/dist/mqtt.min.js"></script>
-<script src="charts.js?v=202610061900"></script>
-<script src="app.js?v=202610061900"></script>
+<script src="charts.js?v=202610062000"></script>
+<script src="app.js?v=202610062000"></script>
 <script src="usb.js?v=202610061800"></script>
 </body>
 </html>

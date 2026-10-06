@@ -14,6 +14,11 @@ five seconds. Each message is added to the end of the charts as it arrives, so t
 move with the pot. The forecast reruns within about five seconds of a move in the soil, and
 the countdown box flashes when a new one comes in.
 
+After every opening the node watches for the soil to rise. A notice at the top of every page
+counts down while it waits, confirms when the water arrives and raises an alert when it does
+not, which suggests checking the tank, the pump and the tubing. How long to wait and how
+big a rise counts are under Settings, with a switch for a system notification as well.
+
 ## Weather
 
 The models read Open-Meteo's hourly forecast for Durban, the same feed they were trained on.
