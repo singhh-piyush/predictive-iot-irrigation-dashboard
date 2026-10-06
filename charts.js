@@ -202,6 +202,7 @@ const Charts = (() => {
     const cross = svg.querySelector("#cross");
     const hover = svg.querySelector(".hover");
     hover.addEventListener("mousemove", (ev) => {
+      el.lastPointer = { clientX: ev.clientX, clientY: ev.clientY };
       const box = svg.getBoundingClientRect();
       const vx = (ev.clientX - box.left) * (W / box.width);
       const t = o.x[0] + (vx - pad.left) / (W - pad.left - pad.right) * (o.x[1] - o.x[0]);
@@ -226,9 +227,12 @@ const Charts = (() => {
       tip.style.top = `${ev.clientY + 14}px`;
     });
     hover.addEventListener("mouseleave", () => {
+      el.lastPointer = null;
       cross.setAttribute("visibility", "hidden");
       tooltip().hidden = true;
     });
+    // the live charts redraw every second, so a reader hovering keeps the readout
+    if (el.lastPointer && el.matches(":hover")) hover.dispatchEvent(new MouseEvent("mousemove", el.lastPointer));
   }
 
   // Vertical bars from a zero baseline, for the skill by horizon figure

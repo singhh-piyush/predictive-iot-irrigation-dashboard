@@ -15,6 +15,9 @@ const RUN_GAP_S = 300;
 const PAGES = ["dashboard", "history", "model", "settings"];
 const DAY_COLUMNS = ["t", "soil", "rain", "light", "soil_temp_x100", "air_temp_x10", "humidity_x10", "relay"];
 const SIM_TIMEOUT_MS = 6000;
+// the node sends a reading a second, the history ring keeps one every two minutes
+const LIVE_KEEP = 900;
+const REDRAW_MS = 1000;
 
 // skill against persistence per horizon from the training run, all stations pooled
 const TRAINED_SKILL = { labels: ["2 h", "4 h", "8 h", "16 h", "24 h"], values: [0.05, 0.08, 0.13, 0.20, 0.20] };
@@ -32,10 +35,11 @@ const relay = el("relay");
 
 const data = {
   state: null, forecast: null, forecasts: [], weather: null, hourly: { hours: [], raw: [] },
-  history: null, days: {}, scores: [], config: { auto: false, threshold: 0.3, lead: 2, pulse_s: 10, dry_raw: 4095, wet_raw: 2548 },
+  history: null, live: [], days: {}, scores: [], config: { auto: false, threshold: 0.3, lead: 2, pulse_s: 10, dry_raw: 4095, wet_raw: 2548 },
 };
 let client = null;
 let lastMessage = 0;
+let lastDraw = 0;
 let nodeOnline = false;
 let page = "dashboard";
 let dayChosen = null;
@@ -66,6 +70,7 @@ function nodeReachable() {
 
 function refreshStatus() {
   if (!client || !client.connected) return;
+  forecastAge();
   if (!lastMessage) {
     setStatus("idle", nodeOnline ? "Node online, waiting for readings" : "Waiting for the node");
   } else {
@@ -155,10 +160,38 @@ function columnPoints(src, field, scaleBy) {
   });
 }
 
+// A state message as a row in the history's own columns
+function livePoint(s) {
+  const x = (v, k) => (v === undefined ? MISSING : Math.round(v * k));
+  return {
+    t: s.t, soil: s.soil_raw, rain: s.rain_raw, light: s.light_raw,
+    soil_temp_x100: x(s.soil_temp, 100), air_temp_x10: x(s.air_temp, 10), humidity_x10: x(s.humidity, 10),
+    relay: s.relay ? 1 : 0,
+  };
+}
+
+function addLive(s) {
+  const h = data.history;
+  const since = h && h.t.length ? h.t[h.t.length - 1] : 0;
+  data.live = data.live.filter((p) => p.t > since && p.t < s.t).slice(-LIVE_KEEP + 1);
+  if (s.t > since) data.live.push(livePoint(s));
+}
+
+// The two minute ring with every reading since its last point on the end
+function withLive() {
+  const h = data.history;
+  const since = h && h.t.length ? h.t[h.t.length - 1] : 0;
+  const tail = data.live.filter((p) => p.t > since);
+  if (!tail.length) return h;
+  const out = {};
+  for (const k of DAY_COLUMNS) out[k] = (h ? h[k] : []).concat(tail.map((p) => p[k]));
+  return out;
+}
+
 // The dashboard shows the current run only, the readings since the last gap in the
 // ring, so a reboot does not leave a broken line. Earlier runs are on History.
 function currentRun() {
-  const h = data.history;
+  const h = withLive();
   if (!h || !h.t.length) return h;
   let start = h.t.length - 1;
   while (start > 0 && h.t[start] - h.t[start - 1] <= RUN_GAP_S) start--;
@@ -255,6 +288,7 @@ function renderHero() {
     return;
   }
   const ms = f.inference_ms === undefined ? null : `${f.inference_ms} ms`;
+  // the stamp itself is kept current by forecastAge every second
   el("inference").textContent = ms ? `On device, ${ms}` : "On device";
   if (f.crossing === 0) kpi.innerHTML = "Now";
   else if (f.crossing === null) kpi.innerHTML = `24<small>h +</small>`;
@@ -265,8 +299,25 @@ function renderHero() {
   const horizons = el("horizons");
   horizons.innerHTML = f.hours.slice(1).map((h, i) => `<li><span>in ${h} h</span><b>${clampPct(f.levels[i + 1])} %</b></li>`).join("");
   show(horizons, true);
-  prov.textContent = `Computed on the node at ${clock(f.at)}.`;
+  forecastAge();
   show(prov, true);
+}
+
+function forecastAge() {
+  const f = data.forecast;
+  if (!f || !f.ready) return;
+  const since = Math.max(0, now() - f.at) * 1000;
+  el("provisional").textContent = since < 5000
+    ? `Computed on the node just now, at ${clock(f.at)}.`
+    : `Computed on the node ${ago(since)}, at ${clock(f.at)}.`;
+}
+
+// at most once a second, so a burst of messages after a reconnect draws once
+function drawLive() {
+  if (page !== "dashboard" || document.hidden || Date.now() - lastDraw < REDRAW_MS) return;
+  lastDraw = Date.now();
+  renderHero();
+  renderTraces();
 }
 
 function weatherPoints(name) {
@@ -884,6 +935,7 @@ function connect(password) {
       nodeOnline = true;
       data.state = JSON.parse(text);
       renderReadings(data.state);
+      if (data.state.t) { addLive(data.state); drawLive(); }
       document.querySelectorAll(".dot").forEach((d) => {
         d.classList.remove("tick");
         void d.offsetWidth;
@@ -892,6 +944,10 @@ function connect(password) {
     } else if (kind === "forecast") {
       data.forecast = JSON.parse(text);
       renderHero();
+      const kpi = document.querySelector(".kpi");
+      kpi.classList.remove("fresh");
+      void kpi.offsetWidth;
+      kpi.classList.add("fresh");
       if (page === "model") renderInputs();
     } else if (kind === "weather") {
       data.weather = JSON.parse(text);
@@ -904,6 +960,7 @@ function connect(password) {
       if (page === "model") renderCheck();
     } else if (kind === "history") {
       data.history = JSON.parse(text);
+      if (data.state) addLive(data.state);
       renderAll();
     } else if (kind === "config") {
       data.config = { ...data.config, ...JSON.parse(text) };

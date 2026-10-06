@@ -8,6 +8,7 @@
   --soil: #2563a8;
   --soil-pale: #e6eef8;
   --predicted: #b8621c;
+  --predicted-soft: #fbf0e6;
   --soil-temp: #b23a3a;
   --air-temp: #e0821c;
   --humidity: #0f9490;
@@ -89,6 +90,14 @@ body[data-node="offline"] .status { color: var(--warn); }
 }
 
 body[data-node="online"] .dot.tick { animation: tick 0.5s ease-out; }
+
+/* a new forecast from the node lights the countdown up for a moment */
+@keyframes fresh {
+  from { background: var(--predicted-soft); }
+  to { background: var(--ground); }
+}
+
+.kpi.fresh { animation: fresh 1.2s ease-out; }
 
 .backdrop {
   display: none;
@@ -648,5 +657,5 @@ h3.spaced { margin-top: 18px; }
 
 @media (prefers-reduced-motion: reduce) {
   .track, .track::after, .side, main { transition: none; }
-  .dot.tick { animation: none; }
+  .dot.tick, .kpi.fresh { animation: none; }
 }

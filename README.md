@@ -9,6 +9,11 @@ day the node has logged. Model shows every input the node gave its models and wh
 predicted, runs the on-board models on a chosen soil history and keeps score of past
 forecasts. Settings holds the watering rules.
 
+The node sends soil, rain and light once a second and the air and soil temperatures every
+five seconds. Each message is added to the end of the charts as it arrives, so the lines
+move with the pot. The forecast reruns within about five seconds of a move in the soil, and
+the countdown box flashes when a new one comes in.
+
 ## Weather
 
 The models read Open-Meteo's hourly forecast for Durban, the same feed they were trained on.
