@@ -464,6 +464,13 @@
           <input id="wet" class="number" type="number" min="0" max="4095" step="1">
         </div>
       </div>
+      <p class="sub">To calibrate for your own soil, push the probe into dry soil and capture, then into soil that was soaked and left to drain for half an hour and capture again. Each capture takes 30 seconds of readings.</p>
+      <div class="settings-grid">
+        <div class="setting wide"><span class="label">Raw reading now</span><span class="value" id="raw-now">–</span></div>
+        <div class="setting"><span class="label" id="cap-dry-text">Dry soil, not captured</span><button type="button" class="quiet-button" id="cap-dry">Capture</button></div>
+        <div class="setting"><span class="label" id="cap-wet-text">Wet soil, not captured</span><button type="button" class="quiet-button" id="cap-wet">Capture</button></div>
+        <div class="setting wide"><span class="label" id="cap-result">Capture both to save them.</span><button type="button" id="cap-save" disabled>Save to the node</button></div>
+      </div>
     </section>
 
     <section class="card settings">
@@ -552,7 +559,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/mqtt@5.10.1/dist/mqtt.min.js"></script>
 <script src="charts.js?v=202610071800"></script>
-<script src="app.js?v=20261010-202610071800"></script>
+<script src="app.js?v=20261016"></script>
 <script src="usb.js?v=202610061800"></script>
 <script src="knowledge.js?v=202610071800"></script>
 <script src="chat.js?v=202610071800"></script>

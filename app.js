@@ -978,6 +978,72 @@ function renderAll() {
   }
 }
 
+// Captures a probe end from the live readings. The median ignores the odd spike, and
+// readings on either ADC rail are left out because they mean the probe isn't reading.
+const CAPTURE_S = 30;
+const cal = { dry: null, wet: null, run: null };
+const CAP_NAME = { dry: "Dry soil", wet: "Wet soil" };
+
+function captureReading(raw) {
+  const ok = Number.isFinite(raw) && raw > 0 && raw < 4095;
+  el("raw-now").textContent = ok ? String(raw) : "No reading";
+  if (cal.run && ok) cal.run.samples.push(raw);
+}
+
+function startCapture(end) {
+  cal.run = { end, samples: [], left: CAPTURE_S };
+  cal[end] = null;
+  el("cap-dry").disabled = el("cap-wet").disabled = true;
+  const tick = setInterval(() => {
+    cal.run.left -= 1;
+    el(`cap-${end}-text`).textContent = `${CAP_NAME[end]}, capturing, ${cal.run.left} s`;
+    if (cal.run.left > 0) return;
+    clearInterval(tick);
+    finishCapture();
+  }, 1000);
+  el(`cap-${end}-text`).textContent = `${CAP_NAME[end]}, capturing, ${CAPTURE_S} s`;
+  renderCapture();
+}
+
+function finishCapture() {
+  const { end, samples } = cal.run;
+  cal.run = null;
+  el("cap-dry").disabled = el("cap-wet").disabled = false;
+  if (samples.length < 10) {
+    el(`cap-${end}-text`).textContent = `${CAP_NAME[end]}, only ${samples.length} readings. Is the probe connected?`;
+  } else {
+    samples.sort((a, b) => a - b);
+    const raw = samples[Math.floor(samples.length / 2)];
+    const spread = samples[Math.floor(samples.length * 0.9)] - samples[Math.floor(samples.length * 0.1)];
+    cal[end] = raw;
+    el(`cap-${end}-text`).textContent = `${CAP_NAME[end]}, ${raw} (${samples.length} readings, spread ${spread})`;
+  }
+  renderCapture();
+}
+
+function renderCapture() {
+  const { dry, wet } = cal;
+  let text = "Capture both to save them.";
+  let ready = false;
+  if (cal.run) text = "Capturing. Keep the probe still.";
+  else if (dry !== null && wet !== null && Math.abs(dry - wet) < 100) {
+    text = "The two readings are too close. Check the wet soil is properly soaked.";
+  } else if (dry !== null && wet !== null) {
+    const raw = data.state && data.state.soil_raw;
+    const now = Number.isFinite(raw) && raw > 0 && raw < 4095 ? `, so the reading now would be ${Math.round((raw - dry) / (wet - dry) * 100)} %` : "";
+    text = `Saving sets 0 % at ${dry} and 100 % at ${wet}${now}.`;
+    ready = true;
+  }
+  el("cap-result").textContent = text;
+  el("cap-save").disabled = !ready;
+}
+
+function saveCapture() {
+  publishConfig({ dry_raw: cal.dry, wet_raw: cal.wet });
+  el("cap-result").textContent = `Saved. 0 % is now ${cal.dry} and 100 % is ${cal.wet}.`;
+  el("cap-save").disabled = true;
+}
+
 function publishConfig(patch) {
   client.publish(`irrigation/${NODE}/config/set`, JSON.stringify(patch));
 }
@@ -1011,6 +1077,7 @@ function connect(password) {
       nodeOnline = true;
       data.state = JSON.parse(text);
       renderReadings(data.state);
+      captureReading(data.state.soil_raw);
       if (data.state.t) { addLive(data.state); drawLive(); }
       document.querySelectorAll(".dot").forEach((d) => {
         d.classList.remove("tick");
@@ -1100,6 +1167,9 @@ el("delivery-reset").addEventListener("click", () => publishConfig({ reset_deliv
 el("pulse").addEventListener("change", () => publishConfig({ pulse_s: Number(el("pulse").value) }));
 el("dry").addEventListener("change", () => publishConfig({ dry_raw: Number(el("dry").value) }));
 el("wet").addEventListener("change", () => publishConfig({ wet_raw: Number(el("wet").value) }));
+el("cap-dry").addEventListener("click", () => startCapture("dry"));
+el("cap-wet").addEventListener("click", () => startCapture("wet"));
+el("cap-save").addEventListener("click", saveCapture);
 el("check-s").addEventListener("change", () => publishConfig({ check_s: Number(el("check-s").value) }));
 el("check-rise").addEventListener("change", () => publishConfig({ check_rise: Number(el("check-rise").value) / 100 }));
 
