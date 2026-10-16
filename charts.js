@@ -123,10 +123,15 @@ const Charts = (() => {
   }
 
   function draw(el, o) {
-    const W = o.small ? NARROW : WIDE;
-    const H = o.small ? 140 : 240;
+    // a phone gets the narrow canvas too, otherwise the labels shrink to half size
+    const narrow = o.small || (el.clientWidth > 0 && el.clientWidth < 480);
+    const W = narrow ? NARROW : WIDE;
+    const H = o.small ? 140 : narrow ? 200 : 240;
     const pad = { ...PAD };
     if (o.small) { pad.left = 42; pad.top = 12; pad.right = 10; }
+    else if (narrow) pad.right = 10;
+    let step = o.step || 6;
+    if (narrow && !o.small) while ((o.x[1] - o.x[0]) / 3600 / step > 6) step *= 2;
     const x = scale(o.x[0], o.x[1], pad.left, W - pad.right);
     let [y0, y1] = o.y;
     if (y1 - y0 < 1e-9) { y0 -= 1; y1 += 1; }
@@ -150,7 +155,7 @@ const Charts = (() => {
       s += `<line class="grid-line" x1="${pad.left}" x2="${W - pad.right}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}"/>`;
       s += `<text class="axis-text" x="${pad.left - 6}" y="${(y(v) + 4).toFixed(1)}" text-anchor="end">${fmt(v)}</text>`;
     }
-    const ticks = o.relative ? relTicks(o.x[0], o.x[1], o.now, o.step || 6) : hourTicks(o.x[0], o.x[1], o.step || 6);
+    const ticks = o.relative ? relTicks(o.x[0], o.x[1], o.now, step) : hourTicks(o.x[0], o.x[1], step);
     for (const t of ticks) {
       const label = o.relative ? relLabel(t, o.now) : clock(t);
       // a label at either edge is pulled inside the plot rather than cut off

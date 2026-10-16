@@ -1046,6 +1046,7 @@ function saveCapture() {
 }
 
 function publishConfig(patch) {
+  if (!client) return;
   client.publish(`irrigation/${NODE}/config/set`, JSON.stringify(patch));
 }
 
@@ -1256,6 +1257,8 @@ el("offline-demo").addEventListener("click", () => {
 async function loadUpgradeSummary() {
   try {
     let response = await fetch("/api/upgrade_results");
+    // the offline demonstration needs the local server, so the button only shows when it answers
+    show(el("offline-demo"), response.ok);
     if (!response.ok) response = await fetch("model_evidence.json");
     if (!response.ok) return;
     upgradeSummary = await response.json();

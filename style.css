@@ -231,6 +231,8 @@ button {
   cursor: pointer;
 }
 
+button:disabled:not(.choice, .chat-send) { opacity: 0.45; cursor: default; }
+
 .quiet-button {
   padding: 7px 12px;
   font-size: 13.5px;
@@ -633,7 +635,7 @@ h3.spaced { margin-top: 18px; }
 .setting .value { font-size: 14.5px; color: var(--quiet); }
 .usb-note { margin: 4px 0 0; font-size: 13.5px; color: var(--quiet); }
 .key-row { display: flex; flex-wrap: wrap; gap: 8px; }
-.key-input { width: 220px; padding: 7px 10px; font: inherit; font-size: 14px; border: 1px solid #c3c9cf; border-radius: 6px; }
+.key-input { width: 220px; padding: 7px 10px; font: inherit; font-size: 14px; border: 1px solid #c3c9cf; border-radius: 6px; -webkit-text-security: disc; }
 .key-input:focus { outline: 2px solid var(--brand); outline-offset: 2px; }
 .settings .sub { margin-top: 12px; }
 
