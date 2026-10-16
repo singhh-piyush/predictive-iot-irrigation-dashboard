@@ -100,8 +100,10 @@ function fmt(v, digits) {
 }
 
 // relative saturation in percent, from the probe's dry and wet readings
+// Same rule as the node: 0 and 4095 are the ADC rails, which a loose wire also reads
 function pct(raw) {
   const c = data.config;
+  if (!Number.isFinite(raw) || raw <= 0 || raw >= 4095 || Math.abs(c.wet_raw - c.dry_raw) < 100) return null;
   return (raw - c.dry_raw) / (c.wet_raw - c.dry_raw) * 100;
 }
 
@@ -469,7 +471,7 @@ function verification() {
   for (const item of data.forecasts) {
     HORIZONS.forEach((h, k) => {
       const observed = theta.get(item.t + h * 3600);
-      if (observed === undefined) return;
+      if (observed === undefined || observed === null) return;
       pairs[h].push({ t: item.t, predicted: item.levels[k + 1] * 100,
                       persisted: item.levels[0] * 100, observed, full: item.full });
     });
