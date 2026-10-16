@@ -36,6 +36,7 @@
 
   <form id="login" class="card login" hidden>
     <p>Broker password to see the node.</p>
+    <button type="button" id="offline-demo" class="quiet-button">Open offline model demonstration</button>
     <label>
       <span>Password</span>
       <input id="password" type="password" autocomplete="current-password" required>
@@ -272,6 +273,16 @@
           </select>
         </label>
       </div>
+      <details class="card sensor-scenario">
+        <summary>Optional local sensor readings</summary>
+        <p class="sub">Blank uses the weather estimate. Light must already be calibrated in W/m².</p>
+        <div class="sim-controls">
+          <label class="field"><span>Air temperature, °C</span><input id="sim-air" type="number" min="-40" max="60" step="1"></label>
+          <label class="field"><span>Humidity, %</span><input id="sim-humidity" type="number" min="0" max="100" step="1"></label>
+          <label class="field"><span>Soil temperature, °C</span><input id="sim-soil-temp" type="number" min="-20" max="60" step="1"></label>
+          <label class="field"><span>Irradiance, W/m²</span><input id="sim-light" type="number" min="0" max="1400" step="10"></label>
+        </div>
+      </details>
       <div class="choices" id="scenarios">
         <span class="choices-label">Start from</span>
         <button type="button" class="choice" data-scenario="watered-now">Just watered</button>
@@ -339,11 +350,17 @@
       <p class="legend">Error in points of soil moisture. Skill: 1 is perfect, 0 is no better than no change.</p>
     </section>
 
+    <section class="card" id="upgrade-evidence" hidden>
+      <div class="card-head"><div><h2>Upgrade evidence</h2><p class="sub">Offline simulation and measured prediction errors, not a plant experiment</p></div></div>
+      <p id="upgrade-summary"></p>
+      <img id="upgrade-shap" alt="Computed SHAP contributions across the five selected forecasts" style="width:100%;height:auto" loading="lazy">
+      <p class="legend"><a href="shap_beeswarm.pdf" target="_blank" rel="noopener">SHAP detail (PDF)</a> · <a href="gravity_comparison.pdf" target="_blank" rel="noopener">Water comparison (PDF)</a></p>
+    </section>
     <section class="card trained">
       <div class="card-head">
         <div>
           <h2>Training results</h2>
-          <p class="sub">12 US stations, tested on their final year</p>
+          <p class="sub" id="training-source">Historical shipped-model results. Waiting for the selected-model summary.</p>
         </div>
       </div>
       <div class="trained-body">
@@ -396,14 +413,24 @@
           <input id="lead" class="number" type="number" min="1" max="24" step="1">
         </div>
         <div class="setting">
-          <span class="label">Valve open for, seconds</span>
-          <input id="pulse" class="number" type="number" min="1" max="120" step="1">
+          <span class="label">Maximum valve time per episode, seconds</span>
+          <input id="pulse" class="number" type="number" min="1" max="600" step="1">
         </div>
       </div>
     </section>
 
+    <details class="card settings"><summary>Optional light and rain calibration</summary>
+      <p class="sub">Leave unset until measured. Raw light is not irradiance; plate wetness is not rainfall depth.</p>
+      <div class="settings-grid">
+        <div class="setting"><span class="label">Light ADC in darkness</span><input id="light-dark" type="number" min="0" max="4095" class="number"></div>
+        <div class="setting"><span class="label">Light ADC under known irradiance</span><input id="light-bright" type="number" min="0" max="4095" class="number"></div>
+        <div class="setting"><span class="label">Known irradiance, W/m²</span><input id="light-wm2" type="number" min="0" max="1400" class="number"></div>
+        <div class="setting"><span class="label">Rain plate ADC, dry</span><input id="rain-dry" type="number" min="0" max="4095" class="number"></div>
+        <div class="setting"><span class="label">Rain plate ADC, wet</span><input id="rain-wet" type="number" min="0" max="4095" class="number"></div>
+      </div>
+    </details>
     <section class="card settings">
-      <div class="card-head"><div><h2>Watering check</h2><p class="sub">Alert when the soil does not rise after watering</p></div></div>
+      <div class="card-head"><div><h2>Watering check</h2><p class="sub">Bounded pulses, settle, then check the soil. Valve time is not a measured volume.</p></div></div>
       <div class="settings-grid">
         <div class="setting">
           <span class="label">Wait for a rise, seconds</span>
@@ -413,6 +440,8 @@
           <span class="label">Rise needed, %</span>
           <input id="check-rise" class="number" type="number" min="1" max="50" step="1">
         </div>
+        <div class="setting"><span class="label">Settle between pulses, seconds</span><input id="settle" class="number" type="number" min="30" max="1800" step="30"></div>
+        <div class="setting wide"><span class="label">Delivery fault</span><button id="delivery-reset" type="button">Reset after checking the valve and tank</button></div>
         <div class="setting wide">
           <span class="label">System notification on this computer</span>
           <label class="switch">
@@ -523,7 +552,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/mqtt@5.10.1/dist/mqtt.min.js"></script>
 <script src="charts.js?v=202610071800"></script>
-<script src="app.js?v=202610071800"></script>
+<script src="app.js?v=20261010-202610071800"></script>
 <script src="usb.js?v=202610061800"></script>
 <script src="knowledge.js?v=202610071800"></script>
 <script src="chat.js?v=202610071800"></script>

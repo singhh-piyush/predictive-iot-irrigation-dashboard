@@ -43,6 +43,8 @@ const data = {
   history: null, live: [], days: {}, scores: [], config: { auto: false, threshold: 0.3, lead: 2, pulse_s: 10, dry_raw: 4095, wet_raw: 2548, check_s: 120, check_rise: 0.03 },
   watering: null,
 };
+let offlineDemo = false;
+let upgradeSummary = null;
 let client = null;
 let lastMessage = 0;
 let lastDraw = 0;
@@ -75,6 +77,7 @@ function nodeReachable() {
 }
 
 function refreshStatus() {
+  if (offlineDemo) return;
   if (!client || !client.connected) return;
   forecastAge();
   renderWatering();
@@ -403,6 +406,7 @@ function renderInputs() {
     return;
   }
   const v = f.inputs;
+  if (upgradeSummary && f.model_id !== upgradeSummary.model_id) el("training-source").textContent = "Live device uses older or unidentified firmware. The training table below describes the selected upgrade; flash and verify it before comparing live scores.";
   const durban = new Date(f.t * 1000).toLocaleString([], { timeZone: SITE_ZONE, weekday: "short", hour: "2-digit", minute: "2-digit" });
   const model = new Date(f.clock * 1000);
   const modelHour = model.toLocaleTimeString([], { timeZone: "UTC", hour: "2-digit", minute: "2-digit" });
@@ -813,6 +817,7 @@ function simChanged(preset) {
 }
 
 function runSim() {
+  if (offlineDemo) { runOfflineSim(); return; }
   if (!nodeReachable()) return;
   sim.id += 1;
   sim.sent = true;
@@ -820,7 +825,7 @@ function runSim() {
   badge.textContent = "Running on the node";
   badge.dataset.state = "busy";
   el("sim-note").textContent = "Sent to the node.";
-  client.publish(`irrigation/${NODE}/sim/set`, JSON.stringify({ id: sim.id, hour_start: sim.hourStart, theta: sim.theta }));
+  client.publish(`irrigation/${NODE}/sim/set`, JSON.stringify({ id: sim.id, hour_start: sim.hourStart, theta: sim.theta, ...scenarioSensors() }));
   clearTimeout(sim.timer);
   sim.timer = setTimeout(() => {
     if (sim.result) return;
@@ -860,7 +865,7 @@ function renderSim() {
   }
   const badge = el("sim-badge");
   delete badge.dataset.state;
-  badge.textContent = "On device";
+  badge.textContent = r.offline ? "Offline, selected five models" : "On device";
   if (!r.ready) { note.textContent = "The node could not run that history."; return; }
   if (r.crossing === 0) kpi.innerHTML = "Now";
   else if (r.crossing === null) kpi.innerHTML = `24<small>h +</small>`;
@@ -869,12 +874,13 @@ function renderSim() {
   pill.dataset.state = r.decision === "irrigate" ? "irrigate" : "hold";
   const when = el("sim-hour").options[el("sim-hour").selectedIndex].text.toLowerCase();
   note.innerHTML = `Starting at ${when}: ${outlookSentence(r)}`;
-  time.textContent = r.inference_ms === undefined ? "Ran on the node." : `Ran on the node in ${r.inference_ms} ms.`;
+  if (r.offline) note.textContent = `Synthetic soil history with archived weather at ${r.reference_time}. ${r.decision === "irrigate" ? "Watering requested" : "Hold"}.`;
+  time.textContent = r.offline ? `Host inference, model ${r.model_id}. No valve command is sent.` : r.inference_ms === undefined ? "Ran on the node." : `Ran on the node in ${r.inference_ms} ms.`;
   show(time, true);
 }
 
 function renderTrained() {
-  Charts.bars(el("skill-chart"), { ...TRAINED_SKILL, name: "Skill", small: true, format: (v) => v.toFixed(2) });
+  Charts.bars(el("skill-chart"), { ...(upgradeSummary ? upgradeSummary.skill : TRAINED_SKILL), name: "Skill", small: true, format: (v) => v.toFixed(2) });
 }
 
 function minSec(s) {
@@ -889,6 +895,15 @@ function renderWatering() {
   const w = data.watering;
   const notice = el("notice");
   const line = el("check-line");
+  if (w && w.automatic_episode) {
+    const active = ["open", "settling", "fault"].includes(w.episode_phase);
+    const text = `${w.episode_reason}. Valve time ${w.episode_seconds}/${w.episode_limit_s} s, ${w.pulse_count} pulse(s).`;
+    line.textContent = text;
+    el("notice-text").textContent = text;
+    notice.dataset.state = w.delivery_hold ? "failed" : "watching";
+    show(notice, active);
+    return;
+  }
   let state = w ? w.state : "";
   let text = "";
   let short = "";
@@ -909,7 +924,7 @@ function renderWatering() {
       short = `Water reached the soil, up ${rise} %`;
       showNotice = t - w.at < CHECK_OK_SHOW_S;
     } else if (state === "failed") {
-      text = `The valve opened at ${clock(w.opened_at)} but the soil had not risen after ${duration(w.window_s * 1000)}. Check the tank, the pump and the tubing.`;
+      text = `The valve opened at ${clock(w.opened_at)} but the soil had not risen after ${duration(w.window_s * 1000)}. Check the tank, the valve and the tubing.`;
       short = `No rise in the soil after the watering at ${clock(w.opened_at)}`;
       showNotice = !checkDismissed(w);
     }
@@ -938,6 +953,9 @@ function renderSettings() {
   set("threshold", Math.round(c.threshold * 100));
   set("lead", c.lead);
   set("pulse", c.pulse_s);
+  set("settle", c.settle_s || 300);
+  for (const [id, key] of [["light-dark","light_dark"],["light-bright","light_bright"],["light-wm2","light_wm2"],["rain-dry","rain_dry"],["rain-wet","rain_wet"]]) set(id,c[key] || 0);
+  el("delivery-reset").disabled = !c.delivery_hold;
   set("dry", c.dry_raw);
   set("wet", c.wet_raw);
   set("check-s", c.check_s);
@@ -967,7 +985,7 @@ function connect(password) {
   client = mqtt.connect(BROKER, { username: USER, password, clean: true, reconnectPeriod: 3000, connectTimeout: 10000 });
 
   client.on("connect", () => {
-    localStorage.setItem("broker-password", password);
+    localStorage.removeItem("broker-password");
     show(el("login"), false);
     show(el("app"), true);
     client.subscribe(["state", "status", "forecast", "forecasts", "soil_hourly", "history", "config", "sim", "scores", "weather", "watering", "days/+"]
@@ -1074,6 +1092,9 @@ relay.addEventListener("change", () => {
 el("auto").addEventListener("change", () => publishConfig({ auto: el("auto").checked }));
 el("threshold").addEventListener("change", () => publishConfig({ threshold: Number(el("threshold").value) / 100 }));
 el("lead").addEventListener("change", () => publishConfig({ lead: Number(el("lead").value) }));
+for (const [id, key] of [["light-dark","light_dark"],["light-bright","light_bright"],["light-wm2","light_wm2"],["rain-dry","rain_dry"],["rain-wet","rain_wet"]]) el(id).addEventListener("change", () => publishConfig({ [key]: Number(el(id).value) }));
+el("settle").addEventListener("change", () => publishConfig({ settle_s: Number(el("settle").value) }));
+el("delivery-reset").addEventListener("click", () => publishConfig({ reset_delivery: true }));
 el("pulse").addEventListener("change", () => publishConfig({ pulse_s: Number(el("pulse").value) }));
 el("dry").addEventListener("change", () => publishConfig({ dry_raw: Number(el("dry").value) }));
 el("wet").addEventListener("change", () => publishConfig({ wet_raw: Number(el("wet").value) }));
@@ -1124,5 +1145,61 @@ renderSim();
 setInterval(refreshStatus, 1000);
 setInterval(renderAll, 60000);
 
+function scenarioSensors() {
+  const result = {};
+  for (const [id, key] of [["sim-air", "air_temp"], ["sim-humidity", "humidity"], ["sim-soil-temp", "soil_temp"], ["sim-light", "irradiance"]]) {
+    const value = el(id).value.trim();
+    if (value !== "") result[key] = Number(value);
+  }
+  return result;
+}
+for (const id of ["sim-air", "sim-humidity", "sim-soil-temp", "sim-light"]) el(id).addEventListener("input", () => simChanged(null));
+async function runOfflineSim() {
+  const id = ++sim.id;
+  el("sim-badge").textContent = "Running locally";
+  try {
+    const response = await fetch("/api/scenario", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, theta: sim.theta || sliderHistory(), hour_start: sim.hourStart || scenarioHourStart(), threshold: data.config.threshold, lead: data.config.lead, ...scenarioSensors() }) });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "Scenario failed");
+    if (id !== sim.id) return;
+    sim.result = result;
+    renderSim();
+  } catch (error) { el("sim-note").textContent = `Offline server unavailable. Start web/server.py with --dashboard. ${error.message}`; }
+}
+el("offline-demo").addEventListener("click", () => {
+  offlineDemo = true;
+  if (client) { client.end(true); client = null; }
+  data.state = data.forecast = null;
+  data.forecasts = []; data.scores = [];
+  data.hourly = { hours: [], raw: [] };
+  show(el("login"), false);
+  show(el("app"), true);
+  showPage("model");
+  document.querySelectorAll(".choice, .sim-controls input, .sim-controls select").forEach(i => { i.disabled = false; });
+  el("relay").disabled = true;
+  setStatus("offline", "Offline demonstration");
+  simChanged(null);
+});
+async function loadUpgradeSummary() {
+  try {
+    let response = await fetch("/api/upgrade_results");
+    if (!response.ok) response = await fetch("model_evidence.json");
+    if (!response.ok) return;
+    upgradeSummary = await response.json();
+    el("training-source").textContent = `Selected model ${upgradeSummary.model_id}. Held-out US station data; simulations do not measure plant health.`;
+    el("upgrade-summary").textContent = upgradeSummary.summary;
+    el("upgrade-shap").src = "shap_five_horizons.png";
+    const body = document.querySelector(".stations tbody");
+    body.replaceChildren();
+    for (const row of upgradeSummary.stations) {
+      const tr = document.createElement("tr");
+      for (const text of [row.station, ...row.skill.map(v => v.toFixed(2))]) { const td = document.createElement("td"); td.textContent = text; tr.append(td); }
+      body.append(tr);
+    }
+    show(el("upgrade-evidence"), true);
+    renderTrained();
+  } catch (_) { /* A static dashboard can still use live MQTT telemetry. */ }
+}
+loadUpgradeSummary();
 const saved = localStorage.getItem("broker-password");
 if (saved) connect(saved); else show(el("login"), true);
