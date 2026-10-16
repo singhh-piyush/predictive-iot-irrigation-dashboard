@@ -242,19 +242,18 @@ button {
 
 .error { margin: 12px 0 0; font-size: 14px; color: var(--warn); }
 
+.pagehead { flex-wrap: wrap; }
 .strip {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px 22px;
-  padding: 10px 16px;
-  margin-bottom: 14px;
+  justify-content: flex-end;
+  gap: 4px 20px;
+  margin-left: auto;
   font-size: 13.5px;
   color: var(--quiet);
-  background: var(--card);
-  border: 1px solid var(--rule);
-  border-radius: 12px;
 }
+.pagehead:has(.strip:not([hidden])) .head-dot { display: none; }
 
 .strip .status { display: inline-flex; align-items: center; gap: 8px; color: var(--ink); }
 
@@ -666,6 +665,7 @@ h3.spaced { margin-top: 18px; }
   .settings-grid { grid-template-columns: 1fr; }
   .sim-controls { grid-template-columns: 1fr; }
   .card { padding: 14px 14px 12px; }
+  .strip { flex-basis: 100%; justify-content: flex-start; margin-left: 0; }
 }
 
 

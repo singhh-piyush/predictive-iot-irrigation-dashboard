@@ -132,6 +132,7 @@ function showPage(name) {
     if (a.dataset.page === name) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
   });
   el("page-title").textContent = name[0].toUpperCase() + name.slice(1);
+  show(el("strip"), name === "dashboard");
   if (narrow.matches) setSide(false);
   window.scrollTo(0, 0);
   renderAll();

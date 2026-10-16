@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=20261016">
+<link rel="stylesheet" href="style.css?v=20261016b">
 </head>
 <body data-side="open" data-node="idle">
 
@@ -32,6 +32,13 @@
     </button>
     <h1 id="page-title">Dashboard</h1>
     <span class="dot head-dot" aria-hidden="true"></span>
+    <div class="strip" id="strip">
+      <span class="status"><span class="dot" aria-hidden="true"></span><span id="status-text">Not connected</span></span>
+      <span id="signal"></span>
+      <span id="uptime"></span>
+      <span id="strip-valve"></span>
+      <span id="strip-watered"></span>
+    </div>
   </header>
 
   <form id="login" class="card login" hidden>
@@ -53,13 +60,6 @@
   </div>
 
   <section class="page" data-page="dashboard">
-    <div class="strip">
-      <span class="status"><span class="dot" aria-hidden="true"></span><span id="status-text">Not connected</span></span>
-      <span id="signal"></span>
-      <span id="uptime"></span>
-      <span id="strip-valve"></span>
-      <span id="strip-watered"></span>
-    </div>
     <div class="tiles">
       <div class="tile" data-kind="soil">
         <span class="tile-label">Soil moisture</span>
@@ -559,7 +559,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/mqtt@5.10.1/dist/mqtt.min.js"></script>
 <script src="charts.js?v=202610071800"></script>
-<script src="app.js?v=20261016"></script>
+<script src="app.js?v=20261016b"></script>
 <script src="usb.js?v=202610061800"></script>
 <script src="knowledge.js?v=202610071800"></script>
 <script src="chat.js?v=202610071800"></script>
